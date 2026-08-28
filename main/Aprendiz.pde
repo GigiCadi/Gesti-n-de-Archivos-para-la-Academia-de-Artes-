@@ -1,29 +1,29 @@
 // ============================================================
-// Clase: Instructor
-// Representa un instructor de la Academia de Artes Barranquilla
+// Clase: Aprendiz
+// Representa un aprendiz de la Academia de Artes Barranquilla
 // ============================================================
-class Instructor {
-
+class Aprendiz {
+  
   String cedula;
   String nombre;
   String especialidad;
-  String telefono;
   int sesionesRealizadas;
-
-  Instructor(String cedula, String nombre, String especialidad, String telefono, int sesionesRealizadas) {
+  
+  static final int MAX_SESIONES_MES = 4;
+  
+  Aprendiz(String cedula, String nombre, String especialidad, int sesionesRealizadas) {
     this.cedula = cedula;
     this.nombre = nombre;
     this.especialidad = especialidad;
-    this.telefono = telefono;
     this.sesionesRealizadas = sesionesRealizadas;
   }
-
+  
   boolean estaDisponible() {
-    return sesionesRealizadas < ArchivoInstructores.MAX_SESIONES_MES;
+    return sesionesRealizadas < MAX_SESIONES_MES;
   }
-
+  
   String toStringResumido() {
     return nombre + " | CC: " + cedula + " | " + especialidad +
-           " | Sesiones: " + sesionesRealizadas + "/" + ArchivoInstructores.MAX_SESIONES_MES;
+           " | Sesiones: " + sesionesRealizadas + "/" + MAX_SESIONES_MES;
   }
 }

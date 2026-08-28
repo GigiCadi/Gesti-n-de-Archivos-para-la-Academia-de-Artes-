@@ -1,10 +1,6 @@
 // ================================================================
 // LABORATORIO 1 - Manejo de Archivos en Java (Processing)
-// Academia de Artes Barranquilla - Módulo de Instructores
-//
-// Este sketch implementa el CRUD de instructores usando un
-// ARCHIVO INDEXADO (ver ArchivoInstructores.pde) y una interfaz
-// gráfica simple construida a mano (ver UI.pde).
+// Academia de Artes Barranquilla - SISTEMA COMPLETO
 // ================================================================
 
 import java.io.RandomAccessFile;
@@ -13,112 +9,281 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.ArrayList;
 
-// ---- Estados de la aplicación (máquina de estados simple) ----
+// ---- Estados de la aplicación ----
 final int MENU_PRINCIPAL       = 0;
 final int MENU_INSTRUCTORES    = 1;
-final int CREAR_INSTRUCTOR     = 2;
-final int CONSULTAR_INSTRUCTOR = 3;
-final int ACTUALIZAR_INSTRUCTOR= 4;
-final int ELIMINAR_INSTRUCTOR  = 5;
-final int LISTAR_INSTRUCTORES  = 6;
+final int MENU_APRENDICES      = 2;
+final int MENU_SESIONES        = 3;
+
+// Sub-estados de instructores
+final int CREAR_INSTRUCTOR     = 10;
+final int CONSULTAR_INSTRUCTOR = 11;
+final int ACTUALIZAR_INSTRUCTOR= 12;
+final int ELIMINAR_INSTRUCTOR  = 13;
+final int LISTAR_INSTRUCTORES  = 14;
+
+// Sub-estados de aprendices
+final int CREAR_APRENDIZ       = 20;
+final int CONSULTAR_APRENDIZ   = 21;
+final int ACTUALIZAR_APRENDIZ  = 22;
+final int ELIMINAR_APRENDIZ    = 23;
+final int LISTAR_APRENDICES    = 24;
+
+// Sub-estados de sesiones
+final int ASIGNAR_SESION       = 30;
+final int CONSULTAR_SESION     = 31;
+final int CANCELAR_SESION      = 32;
+final int LISTAR_SESIONES      = 33;
+final int SELECCIONAR_INSTRUCTOR_SESION = 34;
 
 int estado = MENU_PRINCIPAL;
 
-// ---- Acceso a datos ----
+// ---- Archivos ----
 ArchivoInstructores archivoInstructores;
+ArchivoAprendices archivoAprendices;
+ArchivoSesiones archivoSesiones;
 
-// ---- Botones por pantalla ----
+// ---- Botones principales ----
 ArrayList<Boton> botonesMenuPrincipal;
 ArrayList<Boton> botonesMenuInstructores;
+ArrayList<Boton> botonesMenuAprendices;
+ArrayList<Boton> botonesMenuSesiones;
+ArrayList<Boton> botonesInstructoresDisponibles;
+
+// ---- Botones de acción ----
 Boton botonGuardar, botonBuscar, botonEliminar, botonVolver, botonCancelar;
+Boton botonAsignar;
 
-// ---- Formulario reutilizado por Crear / Consultar / Actualizar / Eliminar ----
+// ---- Campos de formulario ----
 CampoTexto campoCedula, campoNombre, campoEspecialidad, campoTelefono;
-ArrayList<CampoTexto> camposActivosEnPantalla; // cuáles campos se muestran según el estado
+CampoTexto campoCedulaAprendiz, campoNombreAprendiz, campoEspecialidadAprendiz;
+CampoTexto campoCodigoSesion, campoFechaSesion;
+CampoTexto campoEspecialidadSesion;
 
-// ---- Feedback visual ----
+// ---- Feedback ----
 String mensaje = "";
 color colorMensaje = color(0);
 
-// ---- Resultados para mostrar en pantalla ----
+// ---- Resultados y datos temporales ----
 Instructor instructorEncontrado = null;
-ArrayList<Instructor> listaParaMostrar = null;
+Aprendiz aprendizEncontrado = null;
+Sesion sesionEncontrada = null;
+ArrayList<Instructor> listaInstructores = null;
+ArrayList<Aprendiz> listaAprendices = null;
+ArrayList<Sesion> listaSesiones = null;
+ArrayList<Instructor> instructoresDisponibles = null;
+String cedulaAprendizSeleccionado = "";
+String especialidadSeleccionada = "";
+int instructorSeleccionadoIndex = -1;
 
+// ---- Variables para posicionamiento dinámico ----
+float centroX, centroY;
+
+// ================================================================
+// SETUP: Inicialización del sistema
+// ================================================================
 void setup() {
-  size(820, 600);
-
+  size(1280, 720);
+  surface.setTitle("Academia de Artes Barranquilla - Sistema de Gestión");
+  surface.setResizable(true);
+  
+  try {
+    java.awt.Frame frame = (java.awt.Frame) surface.getNative();
+    frame.setExtendedState(java.awt.Frame.MAXIMIZED_BOTH);
+    frame.setVisible(true);
+    frame.requestFocus();
+  } catch (Exception e) {
+    surface.setSize(displayWidth, displayHeight);
+    println("Nota: No se pudo maximizar automáticamente.");
+  }
+  
+  pixelDensity(1);
+  noSmooth();
+  
+  centroX = width / 2;
+  centroY = height / 2;
+  
   archivoInstructores = new ArchivoInstructores("data/instructores.dat");
+  archivoAprendices = new ArchivoAprendices("data/aprendices.dat");
+  archivoSesiones = new ArchivoSesiones("data/sesiones.dat");
+  
   if (!archivoInstructores.abrir()) {
-    mensaje = "No se pudo abrir el archivo de instructores.";
+    mensaje = "Error: No se pudo abrir el archivo de instructores.";
     colorMensaje = color(200, 40, 40);
   }
-
-  // ---- Menú principal ----
-  botonesMenuPrincipal = new ArrayList<Boton>();
-  botonesMenuPrincipal.add(new Boton(300, 220, 220, 50, "Instructores"));
-  botonesMenuPrincipal.add(new Boton(300, 290, 220, 50, "Aprendices"));
-  botonesMenuPrincipal.add(new Boton(300, 360, 220, 50, "Sesiones"));
-
-  // ---- Menú de instructores ----
-  botonesMenuInstructores = new ArrayList<Boton>();
-  botonesMenuInstructores.add(new Boton(280, 140, 260, 45, "Crear instructor"));
-  botonesMenuInstructores.add(new Boton(280, 195, 260, 45, "Consultar instructor"));
-  botonesMenuInstructores.add(new Boton(280, 250, 260, 45, "Actualizar instructor"));
-  botonesMenuInstructores.add(new Boton(280, 305, 260, 45, "Eliminar instructor"));
-  botonesMenuInstructores.add(new Boton(280, 360, 260, 45, "Listar instructores"));
-  botonesMenuInstructores.add(new Boton(280, 415, 260, 45, "Reiniciar sesiones del mes"));
-  botonesMenuInstructores.add(new Boton(280, 490, 260, 40, "Volver"));
-
-  // ---- Campos de formulario (se reutilizan según la pantalla) ----
-  campoCedula       = new CampoTexto(300, 190, 300, 36, "Cédula");
-  campoNombre       = new CampoTexto(300, 260, 300, 36, "Nombre");
-  campoEspecialidad = new CampoTexto(300, 330, 300, 36, "Especialidad");
-  campoTelefono     = new CampoTexto(300, 400, 300, 36, "Teléfono");
-
-  botonGuardar  = new Boton(300, 460, 140, 42, "Guardar");
-  botonBuscar   = new Boton(300, 250, 140, 42, "Buscar");
-  botonEliminar = new Boton(300, 250, 140, 42, "Eliminar");
-  botonCancelar = new Boton(460, 460, 140, 42, "Cancelar");
-  botonVolver   = new Boton(30, 530, 120, 40, "Volver");
+  if (!archivoAprendices.abrir()) {
+    mensaje = "Error: No se pudo abrir el archivo de aprendices.";
+    colorMensaje = color(200, 40, 40);
+  }
+  if (!archivoSesiones.abrir()) {
+    mensaje = "Error: No se pudo abrir el archivo de sesiones.";
+    colorMensaje = color(200, 40, 40);
+  }
+  
+  inicializarBotones();
+  inicializarCampos();
 }
 
-void draw() {
-  background(245);
+// ================================================================
+// INICIALIZACIÓN DE COMPONENTES
+// ================================================================
 
+void inicializarBotones() {
+  // ---- MENÚ PRINCIPAL (estilo imagen) ----
+  botonesMenuPrincipal = new ArrayList<Boton>();
+  
+  // Módulo 1: Sesiones (Azul)
+  botonesMenuPrincipal.add(new Boton(centroX - 500, height * 0.23f, 350, 90, 
+    "MÓDULO DE SESIONES", "Administra las sesiones de clases", 
+    color(26, 115, 232), color(52, 152, 219)));
+  
+  // Módulo 2: Instructores (Verde)
+  botonesMenuPrincipal.add(new Boton(centroX + 150, height * 0.23f, 350, 90, 
+    "MÓDULO DE INSTRUCTORES", "Gestiona la información de los instructores", 
+    color(39, 174, 96), color(46, 204, 113)));
+  
+  // Módulo 3: Aprendices (Morado)
+  botonesMenuPrincipal.add(new Boton(centroX - 500, height * 0.40f, 350, 90, 
+    "MÓDULO DE APRENDICES", "Gestiona la información de los aprendices", 
+    color(155, 89, 182), color(169, 105, 197)));
+  
+  // Módulo 4: Reinicio (Amarillo)
+  botonesMenuPrincipal.add(new Boton(centroX + 150, height * 0.40f, 350, 90, 
+    "REINICIO Y REPORTES", "Reinicia contadores y genera reportes", 
+    color(243, 156, 18), color(241, 196, 15)));
+  
+  // Módulo 5: Salir (Rojo)
+  botonesMenuPrincipal.add(new Boton(centroX - 120, height * 0.57f, 240, 60, 
+    "SALIR", "Guarda los cambios y sale del sistema", 
+    color(192, 57, 43), color(231, 76, 60)));
+  
+  // ---- MENÚ DE INSTRUCTORES ----
+  botonesMenuInstructores = new ArrayList<Boton>();
+  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.22f, 300, 48, "Crear instructor", color(26, 115, 232), color(52, 152, 219)));
+  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.30f, 300, 48, "Consultar instructor", color(26, 115, 232), color(52, 152, 219)));
+  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.38f, 300, 48, "Actualizar instructor", color(26, 115, 232), color(52, 152, 219)));
+  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.46f, 300, 48, "Eliminar instructor", color(192, 57, 43), color(231, 76, 60)));
+  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.54f, 300, 48, "Listar instructores", color(26, 115, 232), color(52, 152, 219)));
+  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.62f, 300, 48, "Reiniciar sesiones del mes", color(243, 156, 18), color(241, 196, 15)));
+  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.72f, 300, 42, "← Volver", color(149, 165, 166), color(189, 195, 199)));
+  
+  // ---- MENÚ DE APRENDICES ----
+  botonesMenuAprendices = new ArrayList<Boton>();
+  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.22f, 300, 48, "Crear aprendiz", color(155, 89, 182), color(169, 105, 197)));
+  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.30f, 300, 48, "Consultar aprendiz", color(155, 89, 182), color(169, 105, 197)));
+  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.38f, 300, 48, "Actualizar aprendiz", color(155, 89, 182), color(169, 105, 197)));
+  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.46f, 300, 48, "Eliminar aprendiz", color(192, 57, 43), color(231, 76, 60)));
+  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.54f, 300, 48, "Listar aprendices", color(155, 89, 182), color(169, 105, 197)));
+  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.62f, 300, 48, "Reiniciar sesiones del mes", color(243, 156, 18), color(241, 196, 15)));
+  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.72f, 300, 42, "← Volver", color(149, 165, 166), color(189, 195, 199)));
+  
+  // ---- MENÚ DE SESIONES ----
+  botonesMenuSesiones = new ArrayList<Boton>();
+  botonesMenuSesiones.add(new Boton(centroX - 150, height * 0.25f, 300, 55, "Asignar sesión", color(26, 115, 232), color(52, 152, 219)));
+  botonesMenuSesiones.add(new Boton(centroX - 150, height * 0.34f, 300, 55, "Consultar sesión", color(26, 115, 232), color(52, 152, 219)));
+  botonesMenuSesiones.add(new Boton(centroX - 150, height * 0.43f, 300, 55, "Cancelar sesión", color(192, 57, 43), color(231, 76, 60)));
+  botonesMenuSesiones.add(new Boton(centroX - 150, height * 0.52f, 300, 55, "Listar sesiones", color(26, 115, 232), color(52, 152, 219)));
+  botonesMenuSesiones.add(new Boton(centroX - 150, height * 0.63f, 300, 55, "← Volver", color(149, 165, 166), color(189, 195, 199)));
+  
+  // ---- BOTONES DE ACCIÓN ----
+  float yBase = height * 0.78f;
+  botonGuardar  = new Boton(centroX - 80, yBase, 160, 45, "Guardar", color(39, 174, 96), color(46, 204, 113));
+  botonBuscar   = new Boton(centroX + 170, height * 0.28f, 120, 40, "Buscar", color(26, 115, 232), color(52, 152, 219));
+  botonEliminar = new Boton(centroX - 80, height * 0.40f, 160, 45, "Eliminar", color(192, 57, 43), color(231, 76, 60));
+  botonCancelar = new Boton(centroX + 100, yBase, 160, 45, "Cancelar", color(149, 165, 166), color(189, 195, 199));
+  botonVolver   = new Boton(width * 0.04f, height * 0.88f, 130, 42, "← Volver", color(149, 165, 166), color(189, 195, 199));
+  botonAsignar  = new Boton(centroX - 100, yBase, 200, 45, "Asignar Sesión", color(26, 115, 232), color(52, 152, 219));
+  
+  botonesInstructoresDisponibles = new ArrayList<Boton>();
+}
+
+void inicializarCampos() {
+  float anchoCampo = 340;
+  float inicioX = centroX - anchoCampo/2;
+  
+  campoCedula       = new CampoTexto(inicioX, height * 0.28f, anchoCampo, 38, "Cédula");
+  campoNombre       = new CampoTexto(inicioX, height * 0.38f, anchoCampo, 38, "Nombre");
+  campoEspecialidad = new CampoTexto(inicioX, height * 0.48f, anchoCampo, 38, "Especialidad");
+  campoTelefono     = new CampoTexto(inicioX, height * 0.58f, anchoCampo, 38, "Teléfono");
+  
+  campoCedulaAprendiz       = new CampoTexto(inicioX, height * 0.28f, anchoCampo, 38, "Cédula");
+  campoNombreAprendiz       = new CampoTexto(inicioX, height * 0.38f, anchoCampo, 38, "Nombre");
+  campoEspecialidadAprendiz = new CampoTexto(inicioX, height * 0.48f, anchoCampo, 38, "Especialidad");
+  
+  campoCodigoSesion = new CampoTexto(inicioX, height * 0.28f, anchoCampo, 38, "Código de sesión");
+  campoFechaSesion  = new CampoTexto(inicioX, height * 0.38f, anchoCampo, 38, "Fecha (AAAA-MM-DD)");
+  campoEspecialidadSesion = new CampoTexto(inicioX, height * 0.52f, anchoCampo, 38, "Especialidad");
+}
+
+// ================================================================
+// DRAW: Bucle principal de dibujo
+// ================================================================
+void draw() {
+  centroX = width / 2;
+  centroY = height / 2;
+  
+  background(240, 245, 250);
+  
   switch (estado) {
     case MENU_PRINCIPAL:        dibujarMenuPrincipal(); break;
     case MENU_INSTRUCTORES:     dibujarMenuInstructores(); break;
-    case CREAR_INSTRUCTOR:      dibujarFormularioCrear(); break;
-    case CONSULTAR_INSTRUCTOR:  dibujarFormularioConsultar(); break;
-    case ACTUALIZAR_INSTRUCTOR: dibujarFormularioActualizar(); break;
-    case ELIMINAR_INSTRUCTOR:   dibujarFormularioEliminar(); break;
-    case LISTAR_INSTRUCTORES:   dibujarListado(); break;
+    case MENU_APRENDICES:       dibujarMenuAprendices(); break;
+    case MENU_SESIONES:         dibujarMenuSesiones(); break;
+    case CREAR_INSTRUCTOR:      dibujarFormularioCrearInstructor(); break;
+    case CONSULTAR_INSTRUCTOR:  dibujarFormularioConsultarInstructor(); break;
+    case ACTUALIZAR_INSTRUCTOR: dibujarFormularioActualizarInstructor(); break;
+    case ELIMINAR_INSTRUCTOR:   dibujarFormularioEliminarInstructor(); break;
+    case LISTAR_INSTRUCTORES:   dibujarListadoInstructores(); break;
+    case CREAR_APRENDIZ:        dibujarFormularioCrearAprendiz(); break;
+    case CONSULTAR_APRENDIZ:    dibujarFormularioConsultarAprendiz(); break;
+    case ACTUALIZAR_APRENDIZ:   dibujarFormularioActualizarAprendiz(); break;
+    case ELIMINAR_APRENDIZ:     dibujarFormularioEliminarAprendiz(); break;
+    case LISTAR_APRENDICES:     dibujarListadoAprendices(); break;
+    case ASIGNAR_SESION:        dibujarFormularioAsignarSesion(); break;
+    case SELECCIONAR_INSTRUCTOR_SESION: dibujarSeleccionInstructor(); break;
+    case CONSULTAR_SESION:      dibujarFormularioConsultarSesion(); break;
+    case CANCELAR_SESION:       dibujarFormularioCancelarSesion(); break;
+    case LISTAR_SESIONES:       dibujarListadoSesiones(); break;
+    default: break;
   }
-
+  
   dibujarMensaje();
 }
 
 // ================================================================
-// PANTALLA: Menú principal
+// FUNCIONES DE DIBUJO PARA CADA PANTALLA
 // ================================================================
+
 void dibujarMenuPrincipal() {
   dibujarEncabezado("Academia de Artes Barranquilla");
+  fill(80);
+  textAlign(CENTER, TOP);
+  textSize(16);
+  text("Sistema de Gestión de Instructores, Aprendices y Sesiones", width/2, height * 0.12f);
   for (Boton b : botonesMenuPrincipal) b.dibujar();
+  fill(150, 180);
+  textAlign(CENTER, BOTTOM);
+  textSize(12);
+  text("© 2025 Academia de Artes Barranquilla - Arte que transforma, cultura que nos une", width/2, height-15);
 }
 
-// ================================================================
-// PANTALLA: Menú de instructores
-// ================================================================
 void dibujarMenuInstructores() {
   dibujarEncabezado("Gestión de Instructores");
   for (Boton b : botonesMenuInstructores) b.dibujar();
 }
 
-// ================================================================
-// PANTALLA: Crear instructor
-// ================================================================
-void dibujarFormularioCrear() {
-  dibujarEncabezado("Crear instructor");
+void dibujarMenuAprendices() {
+  dibujarEncabezado("Gestión de Aprendices");
+  for (Boton b : botonesMenuAprendices) b.dibujar();
+}
+
+void dibujarMenuSesiones() {
+  dibujarEncabezado("Gestión de Sesiones");
+  for (Boton b : botonesMenuSesiones) b.dibujar();
+}
+
+void dibujarFormularioCrearInstructor() {
+  dibujarEncabezado("Crear Instructor");
   campoCedula.dibujar();
   campoNombre.dibujar();
   campoEspecialidad.dibujar();
@@ -128,12 +293,328 @@ void dibujarFormularioCrear() {
   botonVolver.dibujar();
 }
 
-void accionGuardarCrear() {
+void dibujarFormularioConsultarInstructor() {
+  dibujarEncabezado("Consultar Instructor");
+  float inicioX = centroX - 170;
+  campoCedula.x = inicioX; campoCedula.y = height * 0.28f;
+  campoCedula.dibujar();
+  botonBuscar.x = inicioX + 360; botonBuscar.y = height * 0.27f;
+  botonBuscar.w = 120; botonBuscar.h = 40;
+  botonBuscar.dibujar();
+  botonVolver.dibujar();
+  if (instructorEncontrado != null) {
+    fill(20);
+    textAlign(LEFT, TOP);
+    textSize(18);
+    text(instructorEncontrado.toStringResumido(), inicioX, height * 0.40f);
+    text(instructorEncontrado.estaDisponible() ? "✓ Disponible este mes" : "✗ SIN cupo este mes", inicioX, height * 0.46f);
+  }
+}
+
+void dibujarFormularioActualizarInstructor() {
+  dibujarEncabezado("Actualizar Instructor");
+  float inicioX = centroX - 170;
+  campoCedula.x = inicioX; campoCedula.y = height * 0.22f;
+  campoCedula.dibujar();
+  botonBuscar.x = inicioX + 360; botonBuscar.y = height * 0.21f;
+  botonBuscar.w = 120; botonBuscar.h = 40;
+  botonBuscar.dibujar();
+  campoNombre.y = height * 0.34f;
+  campoEspecialidad.y = height * 0.44f;
+  campoTelefono.y = height * 0.54f;
+  campoNombre.dibujar();
+  campoEspecialidad.dibujar();
+  campoTelefono.dibujar();
+  botonGuardar.y = height * 0.66f;
+  botonGuardar.dibujar();
+  botonVolver.dibujar();
+}
+
+void dibujarFormularioEliminarInstructor() {
+  dibujarEncabezado("Eliminar Instructor");
+  float inicioX = centroX - 170;
+  campoCedula.x = inicioX; campoCedula.y = height * 0.28f;
+  campoCedula.dibujar();
+  botonEliminar.x = inicioX; botonEliminar.y = height * 0.40f;
+  botonEliminar.dibujar();
+  botonVolver.dibujar();
+}
+
+void dibujarListadoInstructores() {
+  dibujarEncabezado("Instructores Registrados");
+  botonVolver.dibujar();
+  if (listaInstructores == null) listaInstructores = archivoInstructores.listarTodos();
+  float inicioX = width * 0.08f;
+  float y = height * 0.20f;
+  fill(20);
+  textAlign(LEFT, TOP);
+  textSize(16);
+  if (listaInstructores.isEmpty()) {
+    text("No hay instructores registrados.", inicioX, y);
+  } else {
+    fill(100);
+    text("Nombre", inicioX, y);
+    text("Cédula", inicioX + 250, y);
+    text("Especialidad", inicioX + 400, y);
+    text("Sesiones", inicioX + 550, y);
+    y += 30;
+    fill(20);
+    for (Instructor inst : listaInstructores) {
+      text(inst.nombre, inicioX, y);
+      text(inst.cedula, inicioX + 250, y);
+      text(inst.especialidad, inicioX + 400, y);
+      text(inst.sesionesRealizadas + "/" + ArchivoInstructores.MAX_SESIONES_MES, inicioX + 550, y);
+      y += 30;
+      if (y > height - 80) break;
+    }
+  }
+}
+
+void dibujarFormularioCrearAprendiz() {
+  dibujarEncabezado("Crear Aprendiz");
+  campoCedulaAprendiz.dibujar();
+  campoNombreAprendiz.dibujar();
+  campoEspecialidadAprendiz.dibujar();
+  botonGuardar.dibujar();
+  botonCancelar.dibujar();
+  botonVolver.dibujar();
+}
+
+void dibujarFormularioConsultarAprendiz() {
+  dibujarEncabezado("Consultar Aprendiz");
+  float inicioX = centroX - 170;
+  campoCedulaAprendiz.x = inicioX; campoCedulaAprendiz.y = height * 0.28f;
+  campoCedulaAprendiz.dibujar();
+  botonBuscar.x = inicioX + 360; botonBuscar.y = height * 0.27f;
+  botonBuscar.w = 120; botonBuscar.h = 40;
+  botonBuscar.dibujar();
+  botonVolver.dibujar();
+  if (aprendizEncontrado != null) {
+    fill(20);
+    textAlign(LEFT, TOP);
+    textSize(18);
+    text(aprendizEncontrado.toStringResumido(), inicioX, height * 0.40f);
+  }
+}
+
+void dibujarFormularioActualizarAprendiz() {
+  dibujarEncabezado("Actualizar Aprendiz");
+  float inicioX = centroX - 170;
+  campoCedulaAprendiz.x = inicioX; campoCedulaAprendiz.y = height * 0.22f;
+  campoCedulaAprendiz.dibujar();
+  botonBuscar.x = inicioX + 360; botonBuscar.y = height * 0.21f;
+  botonBuscar.w = 120; botonBuscar.h = 40;
+  botonBuscar.dibujar();
+  campoNombreAprendiz.y = height * 0.34f;
+  campoEspecialidadAprendiz.y = height * 0.44f;
+  campoNombreAprendiz.dibujar();
+  campoEspecialidadAprendiz.dibujar();
+  botonGuardar.y = height * 0.56f;
+  botonGuardar.dibujar();
+  botonVolver.dibujar();
+}
+
+void dibujarFormularioEliminarAprendiz() {
+  dibujarEncabezado("Eliminar Aprendiz");
+  float inicioX = centroX - 170;
+  campoCedulaAprendiz.x = inicioX; campoCedulaAprendiz.y = height * 0.28f;
+  campoCedulaAprendiz.dibujar();
+  botonEliminar.x = inicioX; botonEliminar.y = height * 0.40f;
+  botonEliminar.dibujar();
+  botonVolver.dibujar();
+}
+
+void dibujarListadoAprendices() {
+  dibujarEncabezado("Aprendices Registrados");
+  botonVolver.dibujar();
+  if (listaAprendices == null) listaAprendices = archivoAprendices.listarTodos();
+  float inicioX = width * 0.08f;
+  float y = height * 0.20f;
+  fill(20);
+  textAlign(LEFT, TOP);
+  textSize(16);
+  if (listaAprendices.isEmpty()) {
+    text("No hay aprendices registrados.", inicioX, y);
+  } else {
+    fill(100);
+    text("Nombre", inicioX, y);
+    text("Cédula", inicioX + 250, y);
+    text("Especialidad", inicioX + 400, y);
+    text("Sesiones", inicioX + 550, y);
+    y += 30;
+    fill(20);
+    for (Aprendiz apr : listaAprendices) {
+      text(apr.nombre, inicioX, y);
+      text(apr.cedula, inicioX + 250, y);
+      text(apr.especialidad, inicioX + 400, y);
+      text(apr.sesionesRealizadas + "/" + Aprendiz.MAX_SESIONES_MES, inicioX + 550, y);
+      y += 30;
+      if (y > height - 80) break;
+    }
+  }
+}
+
+void dibujarFormularioAsignarSesion() {
+  dibujarEncabezado("Asignar Sesión");
+  float inicioX = centroX - 170;
+  fill(80);
+  textAlign(LEFT, TOP);
+  textSize(14);
+  text("Paso 1: Ingresa la cédula del aprendiz", inicioX, height * 0.18f);
+  campoCedulaAprendiz.x = inicioX;
+  campoCedulaAprendiz.y = height * 0.24f;
+  campoCedulaAprendiz.dibujar();
+  botonBuscar.x = inicioX + 360;
+  botonBuscar.y = height * 0.23f;
+  botonBuscar.w = 120;
+  botonBuscar.h = 40;
+  botonBuscar.label = "Verificar";
+  botonBuscar.dibujar();
+  if (aprendizEncontrado != null) {
+    fill(20);
+    textAlign(LEFT, TOP);
+    textSize(15);
+    text("Aprendiz: " + aprendizEncontrado.nombre, inicioX, height * 0.34f);
+    text("Especialidad actual: " + aprendizEncontrado.especialidad, inicioX, height * 0.38f);
+    text("Sesiones realizadas: " + aprendizEncontrado.sesionesRealizadas + "/" + Aprendiz.MAX_SESIONES_MES, inicioX, height * 0.42f);
+    if (!aprendizEncontrado.estaDisponible()) {
+      fill(200, 40, 40);
+      text("⚠ El aprendiz ya completó sus sesiones del mes", inicioX, height * 0.48f);
+    } else {
+      fill(39, 174, 96);
+      text("✓ El aprendiz tiene cupo disponible", inicioX, height * 0.48f);
+      fill(80);
+      text("Especialidad de la sesión:", inicioX, height * 0.54f);
+      campoEspecialidadSesion.x = inicioX;
+      campoEspecialidadSesion.y = height * 0.58f;
+      campoEspecialidadSesion.dibujar();
+      botonAsignar.x = inicioX;
+      botonAsignar.y = height * 0.68f;
+      botonAsignar.dibujar();
+    }
+  }
+  botonVolver.dibujar();
+}
+
+void dibujarSeleccionInstructor() {
+  dibujarEncabezado("Seleccionar Instructor");
+  float inicioX = centroX - 250;
+  fill(80);
+  textAlign(LEFT, TOP);
+  textSize(16);
+  text("Paso 2: Instructores disponibles para " + especialidadSeleccionada, inicioX, height * 0.18f);
+  if (instructoresDisponibles == null || instructoresDisponibles.isEmpty()) {
+    fill(200, 40, 40);
+    textAlign(CENTER, TOP);
+    textSize(18);
+    text("No hay instructores disponibles para esta especialidad", width/2, height * 0.30f);
+    botonVolver.dibujar();
+    return;
+  }
+  float y = height * 0.24f;
+  int index = 0;
+  for (Instructor inst : instructoresDisponibles) {
+    if (index >= botonesInstructoresDisponibles.size()) {
+      botonesInstructoresDisponibles.add(new Boton(inicioX, y, 500, 42, 
+        inst.nombre + " | " + inst.cedula + " | Sesiones: " + 
+        inst.sesionesRealizadas + "/" + ArchivoInstructores.MAX_SESIONES_MES,
+        color(41, 128, 185), color(52, 152, 219), color(255)));
+    } else {
+      Boton b = botonesInstructoresDisponibles.get(index);
+      b.x = inicioX;
+      b.y = y;
+      b.etiqueta = inst.nombre + " | " + inst.cedula + " | Sesiones: " + 
+                   inst.sesionesRealizadas + "/" + ArchivoInstructores.MAX_SESIONES_MES;
+      b.dibujar();
+    }
+    y += 50;
+    index++;
+  }
+  while (botonesInstructoresDisponibles.size() > index) {
+    botonesInstructoresDisponibles.remove(botonesInstructoresDisponibles.size() - 1);
+  }
+  botonVolver.dibujar();
+}
+
+void dibujarFormularioConsultarSesion() {
+  dibujarEncabezado("Consultar Sesión");
+  float inicioX = centroX - 170;
+  campoCodigoSesion.x = inicioX; campoCodigoSesion.y = height * 0.28f;
+  campoCodigoSesion.dibujar();
+  botonBuscar.x = inicioX + 360; botonBuscar.y = height * 0.27f;
+  botonBuscar.w = 120; botonBuscar.h = 40;
+  botonBuscar.dibujar();
+  botonVolver.dibujar();
+  if (sesionEncontrada != null) {
+    fill(20);
+    textAlign(LEFT, TOP);
+    textSize(16);
+    float y = height * 0.40f;
+    text("Código: " + sesionEncontrada.codigoUnico, inicioX, y);
+    text("Aprendiz: " + sesionEncontrada.nombreAprendiz, inicioX, y + 35);
+    text("Cédula: " + sesionEncontrada.cedulaAprendiz, inicioX, y + 70);
+    text("Especialidad: " + sesionEncontrada.especialidad, inicioX, y + 105);
+    text("Instructor: " + sesionEncontrada.cedulaInstructor, inicioX, y + 140);
+    text("Fecha: " + sesionEncontrada.fechaSesion, inicioX, y + 175);
+  }
+}
+
+void dibujarFormularioCancelarSesion() {
+  dibujarEncabezado("Cancelar Sesión");
+  float inicioX = centroX - 170;
+  fill(80);
+  textAlign(LEFT, TOP);
+  textSize(14);
+  text("Ingresa el código de la sesión a cancelar (solo fechas futuras)", inicioX, height * 0.20f);
+  campoCodigoSesion.x = inicioX;
+  campoCodigoSesion.y = height * 0.28f;
+  campoCodigoSesion.dibujar();
+  botonEliminar.x = inicioX;
+  botonEliminar.y = height * 0.40f;
+  botonEliminar.etiqueta = "Cancelar Sesión";
+  botonEliminar.dibujar();
+  botonVolver.dibujar();
+}
+
+void dibujarListadoSesiones() {
+  dibujarEncabezado("Sesiones Registradas");
+  botonVolver.dibujar();
+  if (listaSesiones == null) listaSesiones = archivoSesiones.listarTodas();
+  float inicioX = width * 0.08f;
+  float y = height * 0.20f;
+  fill(20);
+  textAlign(LEFT, TOP);
+  textSize(15);
+  if (listaSesiones.isEmpty()) {
+    text("No hay sesiones registradas.", inicioX, y);
+  } else {
+    fill(100);
+    text("Código", inicioX, y);
+    text("Aprendiz", inicioX + 150, y);
+    text("Especialidad", inicioX + 330, y);
+    text("Fecha", inicioX + 480, y);
+    y += 28;
+    fill(20);
+    for (Sesion ses : listaSesiones) {
+      text(ses.codigoUnico, inicioX, y);
+      text(ses.nombreAprendiz, inicioX + 150, y);
+      text(ses.especialidad, inicioX + 330, y);
+      text(ses.fechaSesion, inicioX + 480, y);
+      y += 28;
+      if (y > height - 80) break;
+    }
+  }
+}
+
+// ================================================================
+// FUNCIONES DE ACCIÓN PARA INSTRUCTORES
+// ================================================================
+
+void accionGuardarInstructor() {
   String cedula = campoCedula.contenido.trim();
   String nombre = campoNombre.contenido.trim();
   String especialidad = campoEspecialidad.contenido.trim();
   String telefono = campoTelefono.contenido.trim();
-
   if (!validarCedula(cedula)) {
     mostrarMensaje("Cédula inválida (solo dígitos, 6 a 15 caracteres).", true);
     return;
@@ -146,7 +627,6 @@ void accionGuardarCrear() {
     mostrarMensaje("Ya existe un instructor con esa cédula.", true);
     return;
   }
-
   Instructor nuevo = new Instructor(cedula, nombre, especialidad, telefono, 0);
   if (archivoInstructores.crear(nuevo)) {
     mostrarMensaje("Instructor creado correctamente.", false);
@@ -156,27 +636,7 @@ void accionGuardarCrear() {
   }
 }
 
-// ================================================================
-// PANTALLA: Consultar instructor
-// ================================================================
-void dibujarFormularioConsultar() {
-  dibujarEncabezado("Consultar instructor");
-  campoCedula.x = 300; campoCedula.y = 190;
-  campoCedula.dibujar();
-  botonBuscar.dibujar();
-  botonVolver.dibujar();
-
-  if (instructorEncontrado != null) {
-    fill(20);
-    textAlign(LEFT, TOP);
-    textSize(16);
-    text(instructorEncontrado.toStringResumido(), 300, 280);
-    text(instructorEncontrado.estaDisponible() ? "Disponible este mes" : "SIN cupo este mes",
-         300, 310);
-  }
-}
-
-void accionBuscarConsultar() {
+void accionBuscarInstructor() {
   String cedula = campoCedula.contenido.trim();
   if (!validarCedula(cedula)) {
     mostrarMensaje("Ingresa una cédula válida.", true);
@@ -190,30 +650,7 @@ void accionBuscarConsultar() {
   }
 }
 
-// ================================================================
-// PANTALLA: Actualizar instructor
-// ================================================================
-void dibujarFormularioActualizar() {
-  dibujarEncabezado("Actualizar instructor");
-  campoCedula.x = 300; campoCedula.y = 150;
-  campoCedula.dibujar();
-  botonBuscar.x = 620; botonBuscar.y = 145;
-  botonBuscar.w = 100; botonBuscar.h = 40;
-  botonBuscar.dibujar();
-
-  campoNombre.y = 230;
-  campoEspecialidad.y = 300;
-  campoTelefono.y = 370;
-  campoNombre.dibujar();
-  campoEspecialidad.dibujar();
-  campoTelefono.dibujar();
-
-  botonGuardar.y = 430;
-  botonGuardar.dibujar();
-  botonVolver.dibujar();
-}
-
-void accionBuscarParaActualizar() {
+void accionBuscarParaActualizarInstructor() {
   String cedula = campoCedula.contenido.trim();
   if (!validarCedula(cedula)) {
     mostrarMensaje("Ingresa una cédula válida.", true);
@@ -230,7 +667,7 @@ void accionBuscarParaActualizar() {
   mensaje = "";
 }
 
-void accionGuardarActualizar() {
+void accionGuardarActualizarInstructor() {
   String cedula = campoCedula.contenido.trim();
   if (!archivoInstructores.existe(cedula)) {
     mostrarMensaje("Primero busca un instructor válido.", true);
@@ -243,12 +680,10 @@ void accionGuardarActualizar() {
     mostrarMensaje("Todos los campos son obligatorios.", true);
     return;
   }
-
   Instructor actual = archivoInstructores.leer(cedula);
   actual.nombre = nombre;
   actual.especialidad = especialidad;
   actual.telefono = telefono;
-
   if (archivoInstructores.actualizar(actual)) {
     mostrarMensaje("Instructor actualizado correctamente.", false);
   } else {
@@ -256,18 +691,7 @@ void accionGuardarActualizar() {
   }
 }
 
-// ================================================================
-// PANTALLA: Eliminar instructor
-// ================================================================
-void dibujarFormularioEliminar() {
-  dibujarEncabezado("Eliminar instructor");
-  campoCedula.x = 300; campoCedula.y = 190;
-  campoCedula.dibujar();
-  botonEliminar.dibujar();
-  botonVolver.dibujar();
-}
-
-void accionEliminar() {
+void accionEliminarInstructor() {
   String cedula = campoCedula.contenido.trim();
   if (!validarCedula(cedula)) {
     mostrarMensaje("Ingresa una cédula válida.", true);
@@ -286,154 +710,516 @@ void accionEliminar() {
 }
 
 // ================================================================
-// PANTALLA: Listado de instructores
+// FUNCIONES DE ACCIÓN PARA APRENDICES
 // ================================================================
-void dibujarListado() {
-  dibujarEncabezado("Instructores registrados");
-  botonVolver.dibujar();
 
-  if (listaParaMostrar == null) return;
-
-  fill(20);
-  textAlign(LEFT, TOP);
-  textSize(15);
-  float y = 140;
-  if (listaParaMostrar.isEmpty()) {
-    text("No hay instructores registrados.", 60, y);
+void accionGuardarAprendiz() {
+  String cedula = campoCedulaAprendiz.contenido.trim();
+  String nombre = campoNombreAprendiz.contenido.trim();
+  String especialidad = campoEspecialidadAprendiz.contenido.trim();
+  if (!validarCedula(cedula)) {
+    mostrarMensaje("Cédula inválida (solo dígitos, 6 a 15 caracteres).", true);
+    return;
   }
-  for (Instructor inst : listaParaMostrar) {
-    text(inst.toStringResumido(), 60, y);
-    y += 28;
+  if (nombre.isEmpty() || especialidad.isEmpty()) {
+    mostrarMensaje("Todos los campos son obligatorios.", true);
+    return;
+  }
+  if (archivoAprendices.existe(cedula)) {
+    mostrarMensaje("Ya existe un aprendiz con esa cédula.", true);
+    return;
+  }
+  Aprendiz nuevo = new Aprendiz(cedula, nombre, especialidad, 0);
+  if (archivoAprendices.crear(nuevo)) {
+    mostrarMensaje("Aprendiz creado correctamente.", false);
+    limpiarCamposFormulario();
+  } else {
+    mostrarMensaje("No se pudo crear el aprendiz.", true);
   }
 }
 
-// ================================================================
-// Utilidades de UI compartidas
-// ================================================================
-void dibujarEncabezado(String titulo) {
-  fill(30);
-  textAlign(CENTER, TOP);
-  textSize(26);
-  text(titulo, width / 2, 40);
+void accionBuscarAprendiz() {
+  String cedula = campoCedulaAprendiz.contenido.trim();
+  if (!validarCedula(cedula)) {
+    mostrarMensaje("Ingresa una cédula válida.", true);
+    return;
+  }
+  aprendizEncontrado = archivoAprendices.leer(cedula);
+  if (aprendizEncontrado == null) {
+    mostrarMensaje("No existe un aprendiz con esa cédula.", true);
+  } else {
+    mensaje = "";
+  }
 }
 
-void mostrarMensaje(String texto, boolean esError) {
-  mensaje = texto;
-  colorMensaje = esError ? color(200, 40, 40) : color(30, 140, 60);
-}
-
-void dibujarMensaje() {
-  if (mensaje.isEmpty()) return;
-  fill(colorMensaje);
-  textAlign(CENTER, TOP);
-  textSize(14);
-  text(mensaje, width / 2, height - 40);
-}
-
-void limpiarCamposFormulario() {
-  campoCedula.limpiar();
-  campoNombre.limpiar();
-  campoEspecialidad.limpiar();
-  campoTelefono.limpiar();
-}
-
-void irAMenuInstructores() {
-  estado = MENU_INSTRUCTORES;
+void accionBuscarParaActualizarAprendiz() {
+  String cedula = campoCedulaAprendiz.contenido.trim();
+  if (!validarCedula(cedula)) {
+    mostrarMensaje("Ingresa una cédula válida.", true);
+    return;
+  }
+  Aprendiz apr = archivoAprendices.leer(cedula);
+  if (apr == null) {
+    mostrarMensaje("No existe un aprendiz con esa cédula.", true);
+    return;
+  }
+  campoNombreAprendiz.contenido = apr.nombre;
+  campoEspecialidadAprendiz.contenido = apr.especialidad;
   mensaje = "";
-  limpiarCamposFormulario();
-  instructorEncontrado = null;
-  listaParaMostrar = null;
 }
 
-boolean validarCedula(String cedula) {
-  if (cedula.length() < 6 || cedula.length() > 15) return false;
-  for (int i = 0; i < cedula.length(); i++) {
-    if (!Character.isDigit(cedula.charAt(i))) return false;
+void accionGuardarActualizarAprendiz() {
+  String cedula = campoCedulaAprendiz.contenido.trim();
+  if (!archivoAprendices.existe(cedula)) {
+    mostrarMensaje("Primero busca un aprendiz válido.", true);
+    return;
   }
-  return true;
+  String nombre = campoNombreAprendiz.contenido.trim();
+  String especialidad = campoEspecialidadAprendiz.contenido.trim();
+  if (nombre.isEmpty() || especialidad.isEmpty()) {
+    mostrarMensaje("Todos los campos son obligatorios.", true);
+    return;
+  }
+  Aprendiz actual = archivoAprendices.leer(cedula);
+  actual.nombre = nombre;
+  actual.especialidad = especialidad;
+  if (archivoAprendices.actualizar(actual)) {
+    mostrarMensaje("Aprendiz actualizado correctamente.", false);
+  } else {
+    mostrarMensaje("No se pudo actualizar el aprendiz.", true);
+  }
+}
+
+void accionEliminarAprendiz() {
+  String cedula = campoCedulaAprendiz.contenido.trim();
+  if (!validarCedula(cedula)) {
+    mostrarMensaje("Ingresa una cédula válida.", true);
+    return;
+  }
+  if (!archivoAprendices.existe(cedula)) {
+    mostrarMensaje("No existe un aprendiz con esa cédula.", true);
+    return;
+  }
+  if (archivoAprendices.eliminar(cedula)) {
+    mostrarMensaje("Aprendiz eliminado.", false);
+    campoCedulaAprendiz.limpiar();
+  } else {
+    mostrarMensaje("No se pudo eliminar el aprendiz.", true);
+  }
 }
 
 // ================================================================
-// Manejo de mouse
+// FUNCIONES DE ACCIÓN PARA SESIONES
 // ================================================================
+
+void accionVerificarAprendiz() {
+  String cedula = campoCedulaAprendiz.contenido.trim();
+  if (!validarCedula(cedula)) {
+    mostrarMensaje("Ingresa una cédula válida.", true);
+    return;
+  }
+  aprendizEncontrado = archivoAprendices.leer(cedula);
+  if (aprendizEncontrado == null) {
+    mostrarMensaje("No existe un aprendiz con esa cédula. Regístrelo primero.", true);
+    return;
+  }
+  if (!aprendizEncontrado.estaDisponible()) {
+    mostrarMensaje("El aprendiz ya completó sus " + Aprendiz.MAX_SESIONES_MES + " sesiones del mes.", true);
+    aprendizEncontrado = null;
+    return;
+  }
+  mostrarMensaje("✓ Aprendiz verificado: " + aprendizEncontrado.nombre, false);
+}
+
+void accionBuscarInstructoresDisponibles() {
+  if (aprendizEncontrado == null) {
+    mostrarMensaje("Primero verifica al aprendiz.", true);
+    return;
+  }
+  especialidadSeleccionada = campoEspecialidadSesion.contenido.trim();
+  if (especialidadSeleccionada.isEmpty()) {
+    mostrarMensaje("Ingresa la especialidad para la sesión.", true);
+    return;
+  }
+  instructoresDisponibles = archivoInstructores.disponiblesPorEspecialidad(especialidadSeleccionada);
+  if (instructoresDisponibles == null || instructoresDisponibles.isEmpty()) {
+    mostrarMensaje("No hay instructores disponibles para " + especialidadSeleccionada, true);
+    return;
+  }
+  cedulaAprendizSeleccionado = aprendizEncontrado.cedula;
+  estado = SELECCIONAR_INSTRUCTOR_SESION;
+  mensaje = "";
+}
+
+void accionAsignarSesionCompleta() {
+  if (instructorSeleccionadoIndex < 0 || instructorSeleccionadoIndex >= instructoresDisponibles.size()) {
+    mostrarMensaje("Selecciona un instructor válido.", true);
+    return;
+  }
+  Instructor instructorSeleccionado = instructoresDisponibles.get(instructorSeleccionadoIndex);
+  instructorSeleccionado = archivoInstructores.leer(instructorSeleccionado.cedula);
+  if (instructorSeleccionado == null || !instructorSeleccionado.estaDisponible()) {
+    mostrarMensaje("El instructor ya no tiene cupo disponible.", true);
+    return;
+  }
+  Aprendiz aprendiz = archivoAprendices.leer(cedulaAprendizSeleccionado);
+  if (aprendiz == null || !aprendiz.estaDisponible()) {
+    mostrarMensaje("El aprendiz ya no tiene cupo disponible.", true);
+    return;
+  }
+  String codigoSesion = generarCodigoSesion();
+  String fechaActual = obtenerFechaActual();
+  Sesion nuevaSesion = new Sesion(codigoSesion, aprendiz.cedula, aprendiz.nombre,
+    especialidadSeleccionada, instructorSeleccionado.cedula, fechaActual);
+  if (!archivoSesiones.crear(nuevaSesion)) {
+    mostrarMensaje("No se pudo crear la sesión.", true);
+    return;
+  }
+  if (!archivoInstructores.incrementarSesion(instructorSeleccionado.cedula)) {
+    mostrarMensaje("Error al actualizar instructor.", true);
+    return;
+  }
+  if (!archivoAprendices.incrementarSesion(aprendiz.cedula)) {
+    mostrarMensaje("Error al actualizar aprendiz.", true);
+    return;
+  }
+  mostrarMensaje("✓ Sesión asignada exitosamente. Código: " + codigoSesion, false);
+  limpiarDatosTemporales();
+  limpiarCamposFormulario();
+  estado = MENU_SESIONES;
+}
+
+void accionBuscarSesion() {
+  String codigo = campoCodigoSesion.contenido.trim();
+  if (codigo.isEmpty()) {
+    mostrarMensaje("Ingresa el código de la sesión.", true);
+    return;
+  }
+  sesionEncontrada = archivoSesiones.leer(codigo);
+  if (sesionEncontrada == null) {
+    mostrarMensaje("No existe una sesión con ese código.", true);
+  } else {
+    mostrarMensaje("Sesión encontrada.", false);
+  }
+}
+
+void accionCancelarSesion() {
+  String codigo = campoCodigoSesion.contenido.trim();
+  if (codigo.isEmpty()) {
+    mostrarMensaje("Ingresa el código de la sesión.", true);
+    return;
+  }
+  Sesion sesion = archivoSesiones.leer(codigo);
+  if (sesion == null) {
+    mostrarMensaje("No existe una sesión con ese código.", true);
+    return;
+  }
+  String fechaActual = obtenerFechaActual();
+  if (compararFechas(sesion.fechaSesion, fechaActual) < 0) {
+    mostrarMensaje("No se puede cancelar: la sesión ya se realizó (fecha pasada).", true);
+    return;
+  }
+  if (!archivoSesiones.eliminar(codigo)) {
+    mostrarMensaje("No se pudo cancelar la sesión.", true);
+    return;
+  }
+  Instructor instructor = archivoInstructores.leer(sesion.cedulaInstructor);
+  if (instructor != null) {
+    instructor.sesionesRealizadas--;
+    archivoInstructores.actualizar(instructor);
+  }
+  Aprendiz aprendiz = archivoAprendices.leer(sesion.cedulaAprendiz);
+  if (aprendiz != null) {
+    aprendiz.sesionesRealizadas--;
+    archivoAprendices.actualizar(aprendiz);
+  }
+  mostrarMensaje("✓ Sesión cancelada correctamente.", false);
+  campoCodigoSesion.limpiar();
+  sesionEncontrada = null;
+}
+
+void mostrarOpcionesReinicio() {
+  mostrarMensaje("Reiniciando sesiones de instructores y aprendices...", false);
+  boolean exito = true;
+  if (archivoInstructores != null) {
+    if (archivoInstructores.reiniciarSesiones()) {
+      println("✓ Sesiones de instructores reiniciadas.");
+    } else {
+      exito = false;
+      println("✗ Error al reiniciar sesiones de instructores.");
+    }
+  }
+  if (archivoAprendices != null) {
+    if (archivoAprendices.reiniciarSesiones()) {
+      println("✓ Sesiones de aprendices reiniciadas.");
+    } else {
+      exito = false;
+      println("✗ Error al reiniciar sesiones de aprendices.");
+    }
+  }
+  if (exito) {
+    mostrarMensaje("✓ Todas las sesiones reiniciadas correctamente.", false);
+  } else {
+    mostrarMensaje("Error al reiniciar algunas sesiones.", true);
+  }
+}
+
+// ================================================================
+// MANEJO DE EVENTOS DEL MOUSE
+// ================================================================
+
 void mousePressed() {
   switch (estado) {
-
     case MENU_PRINCIPAL:
       if (botonesMenuPrincipal.get(0).contieneClic(mouseX, mouseY)) {
+        estado = MENU_SESIONES;
+        limpiarDatosTemporales();
+      } else if (botonesMenuPrincipal.get(1).contieneClic(mouseX, mouseY)) {
         estado = MENU_INSTRUCTORES;
+        limpiarDatosTemporales();
+      } else if (botonesMenuPrincipal.get(2).contieneClic(mouseX, mouseY)) {
+        estado = MENU_APRENDICES;
+        limpiarDatosTemporales();
+      } else if (botonesMenuPrincipal.get(3).contieneClic(mouseX, mouseY)) {
+        mostrarOpcionesReinicio();
+      } else if (botonesMenuPrincipal.get(4).contieneClic(mouseX, mouseY)) {
+        exit();
       }
-      // Los otros botones (Aprendices, Sesiones) se conectan en próximas entregas.
       break;
-
+      
     case MENU_INSTRUCTORES:
-      if (botonesMenuInstructores.get(0).contieneClic(mouseX, mouseY)) { estado = CREAR_INSTRUCTOR; limpiarCamposFormulario(); mensaje=""; }
-      else if (botonesMenuInstructores.get(1).contieneClic(mouseX, mouseY)) { estado = CONSULTAR_INSTRUCTOR; limpiarCamposFormulario(); instructorEncontrado=null; mensaje=""; }
-      else if (botonesMenuInstructores.get(2).contieneClic(mouseX, mouseY)) { estado = ACTUALIZAR_INSTRUCTOR; limpiarCamposFormulario(); mensaje=""; }
-      else if (botonesMenuInstructores.get(3).contieneClic(mouseX, mouseY)) { estado = ELIMINAR_INSTRUCTOR; limpiarCamposFormulario(); mensaje=""; }
-      else if (botonesMenuInstructores.get(4).contieneClic(mouseX, mouseY)) { listaParaMostrar = archivoInstructores.listarTodos(); estado = LISTAR_INSTRUCTORES; }
-      else if (botonesMenuInstructores.get(5).contieneClic(mouseX, mouseY)) {
-        if (archivoInstructores.reiniciarSesiones()) mostrarMensaje("Sesiones reiniciadas para todos los instructores.", false);
-        else mostrarMensaje("No se pudieron reiniciar las sesiones.", true);
+      if (botonesMenuInstructores.get(0).contieneClic(mouseX, mouseY)) {
+        estado = CREAR_INSTRUCTOR; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
+      } else if (botonesMenuInstructores.get(1).contieneClic(mouseX, mouseY)) {
+        estado = CONSULTAR_INSTRUCTOR; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
+      } else if (botonesMenuInstructores.get(2).contieneClic(mouseX, mouseY)) {
+        estado = ACTUALIZAR_INSTRUCTOR; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
+      } else if (botonesMenuInstructores.get(3).contieneClic(mouseX, mouseY)) {
+        estado = ELIMINAR_INSTRUCTOR; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
+      } else if (botonesMenuInstructores.get(4).contieneClic(mouseX, mouseY)) {
+        listaInstructores = archivoInstructores.listarTodos(); estado = LISTAR_INSTRUCTORES; mensaje = "";
+      } else if (botonesMenuInstructores.get(5).contieneClic(mouseX, mouseY)) {
+        if (archivoInstructores.reiniciarSesiones()) {
+          mostrarMensaje("Sesiones reiniciadas para todos los instructores.", false);
+        } else {
+          mostrarMensaje("No se pudieron reiniciar las sesiones.", true);
+        }
+      } else if (botonesMenuInstructores.get(6).contieneClic(mouseX, mouseY)) {
+        estado = MENU_PRINCIPAL; limpiarDatosTemporales(); mensaje = "";
       }
-      else if (botonesMenuInstructores.get(6).contieneClic(mouseX, mouseY)) { estado = MENU_PRINCIPAL; mensaje=""; }
       break;
-
+      
+    case MENU_APRENDICES:
+      if (botonesMenuAprendices.get(0).contieneClic(mouseX, mouseY)) {
+        estado = CREAR_APRENDIZ; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
+      } else if (botonesMenuAprendices.get(1).contieneClic(mouseX, mouseY)) {
+        estado = CONSULTAR_APRENDIZ; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
+      } else if (botonesMenuAprendices.get(2).contieneClic(mouseX, mouseY)) {
+        estado = ACTUALIZAR_APRENDIZ; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
+      } else if (botonesMenuAprendices.get(3).contieneClic(mouseX, mouseY)) {
+        estado = ELIMINAR_APRENDIZ; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
+      } else if (botonesMenuAprendices.get(4).contieneClic(mouseX, mouseY)) {
+        listaAprendices = archivoAprendices.listarTodos(); estado = LISTAR_APRENDICES; mensaje = "";
+      } else if (botonesMenuAprendices.get(5).contieneClic(mouseX, mouseY)) {
+        if (archivoAprendices.reiniciarSesiones()) {
+          mostrarMensaje("Sesiones reiniciadas para todos los aprendices.", false);
+        } else {
+          mostrarMensaje("No se pudieron reiniciar las sesiones.", true);
+        }
+      } else if (botonesMenuAprendices.get(6).contieneClic(mouseX, mouseY)) {
+        estado = MENU_PRINCIPAL; limpiarDatosTemporales(); mensaje = "";
+      }
+      break;
+      
+    case MENU_SESIONES:
+      if (botonesMenuSesiones.get(0).contieneClic(mouseX, mouseY)) {
+        estado = ASIGNAR_SESION; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
+        botonBuscar.etiqueta = "Verificar";
+      } else if (botonesMenuSesiones.get(1).contieneClic(mouseX, mouseY)) {
+        estado = CONSULTAR_SESION; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
+      } else if (botonesMenuSesiones.get(2).contieneClic(mouseX, mouseY)) {
+        estado = CANCELAR_SESION; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
+        botonEliminar.etiqueta = "Cancelar Sesión";
+      } else if (botonesMenuSesiones.get(3).contieneClic(mouseX, mouseY)) {
+        listaSesiones = archivoSesiones.listarTodas(); estado = LISTAR_SESIONES; mensaje = "";
+      } else if (botonesMenuSesiones.get(4).contieneClic(mouseX, mouseY)) {
+        estado = MENU_PRINCIPAL; limpiarDatosTemporales(); mensaje = "";
+      }
+      break;
+      
     case CREAR_INSTRUCTOR:
-      activarCampoSiClic(campoCedula); activarCampoSiClic(campoNombre);
-      activarCampoSiClic(campoEspecialidad); activarCampoSiClic(campoTelefono);
-      if (botonGuardar.contieneClic(mouseX, mouseY)) accionGuardarCrear();
-      else if (botonCancelar.contieneClic(mouseX, mouseY)) irAMenuInstructores();
-      else if (botonVolver.contieneClic(mouseX, mouseY)) irAMenuInstructores();
+      activarCampoSiClic(campoCedula);
+      activarCampoSiClic(campoNombre);
+      activarCampoSiClic(campoEspecialidad);
+      activarCampoSiClic(campoTelefono);
+      if (botonGuardar.contieneClic(mouseX, mouseY)) {
+        accionGuardarInstructor();
+      } else if (botonCancelar.contieneClic(mouseX, mouseY) || botonVolver.contieneClic(mouseX, mouseY)) {
+        estado = MENU_INSTRUCTORES; limpiarCamposFormulario(); mensaje = "";
+      }
       break;
-
+      
     case CONSULTAR_INSTRUCTOR:
       activarCampoSiClic(campoCedula);
-      if (botonBuscar.contieneClic(mouseX, mouseY)) accionBuscarConsultar();
-      else if (botonVolver.contieneClic(mouseX, mouseY)) irAMenuInstructores();
+      if (botonBuscar.contieneClic(mouseX, mouseY)) {
+        accionBuscarInstructor();
+      } else if (botonVolver.contieneClic(mouseX, mouseY)) {
+        estado = MENU_INSTRUCTORES; limpiarCamposFormulario(); instructorEncontrado = null; mensaje = "";
+      }
       break;
-
+      
     case ACTUALIZAR_INSTRUCTOR:
-      activarCampoSiClic(campoCedula); activarCampoSiClic(campoNombre);
-      activarCampoSiClic(campoEspecialidad); activarCampoSiClic(campoTelefono);
-      if (botonBuscar.contieneClic(mouseX, mouseY)) accionBuscarParaActualizar();
-      else if (botonGuardar.contieneClic(mouseX, mouseY)) accionGuardarActualizar();
-      else if (botonVolver.contieneClic(mouseX, mouseY)) irAMenuInstructores();
+      activarCampoSiClic(campoCedula);
+      activarCampoSiClic(campoNombre);
+      activarCampoSiClic(campoEspecialidad);
+      activarCampoSiClic(campoTelefono);
+      if (botonBuscar.contieneClic(mouseX, mouseY)) {
+        accionBuscarParaActualizarInstructor();
+      } else if (botonGuardar.contieneClic(mouseX, mouseY)) {
+        accionGuardarActualizarInstructor();
+      } else if (botonVolver.contieneClic(mouseX, mouseY)) {
+        estado = MENU_INSTRUCTORES; limpiarCamposFormulario(); mensaje = "";
+      }
       break;
-
+      
     case ELIMINAR_INSTRUCTOR:
       activarCampoSiClic(campoCedula);
-      if (botonEliminar.contieneClic(mouseX, mouseY)) accionEliminar();
-      else if (botonVolver.contieneClic(mouseX, mouseY)) irAMenuInstructores();
+      if (botonEliminar.contieneClic(mouseX, mouseY)) {
+        accionEliminarInstructor();
+      } else if (botonVolver.contieneClic(mouseX, mouseY)) {
+        estado = MENU_INSTRUCTORES; limpiarCamposFormulario(); mensaje = "";
+      }
       break;
-
+      
     case LISTAR_INSTRUCTORES:
-      if (botonVolver.contieneClic(mouseX, mouseY)) irAMenuInstructores();
+      if (botonVolver.contieneClic(mouseX, mouseY)) {
+        estado = MENU_INSTRUCTORES; listaInstructores = null; mensaje = "";
+      }
+      break;
+      
+    case CREAR_APRENDIZ:
+      activarCampoSiClic(campoCedulaAprendiz);
+      activarCampoSiClic(campoNombreAprendiz);
+      activarCampoSiClic(campoEspecialidadAprendiz);
+      if (botonGuardar.contieneClic(mouseX, mouseY)) {
+        accionGuardarAprendiz();
+      } else if (botonCancelar.contieneClic(mouseX, mouseY) || botonVolver.contieneClic(mouseX, mouseY)) {
+        estado = MENU_APRENDICES; limpiarCamposFormulario(); mensaje = "";
+      }
+      break;
+      
+    case CONSULTAR_APRENDIZ:
+      activarCampoSiClic(campoCedulaAprendiz);
+      if (botonBuscar.contieneClic(mouseX, mouseY)) {
+        accionBuscarAprendiz();
+      } else if (botonVolver.contieneClic(mouseX, mouseY)) {
+        estado = MENU_APRENDICES; limpiarCamposFormulario(); aprendizEncontrado = null; mensaje = "";
+      }
+      break;
+      
+    case ACTUALIZAR_APRENDIZ:
+      activarCampoSiClic(campoCedulaAprendiz);
+      activarCampoSiClic(campoNombreAprendiz);
+      activarCampoSiClic(campoEspecialidadAprendiz);
+      if (botonBuscar.contieneClic(mouseX, mouseY)) {
+        accionBuscarParaActualizarAprendiz();
+      } else if (botonGuardar.contieneClic(mouseX, mouseY)) {
+        accionGuardarActualizarAprendiz();
+      } else if (botonVolver.contieneClic(mouseX, mouseY)) {
+        estado = MENU_APRENDICES; limpiarCamposFormulario(); mensaje = "";
+      }
+      break;
+      
+    case ELIMINAR_APRENDIZ:
+      activarCampoSiClic(campoCedulaAprendiz);
+      if (botonEliminar.contieneClic(mouseX, mouseY)) {
+        accionEliminarAprendiz();
+      } else if (botonVolver.contieneClic(mouseX, mouseY)) {
+        estado = MENU_APRENDICES; limpiarCamposFormulario(); mensaje = "";
+      }
+      break;
+      
+    case LISTAR_APRENDICES:
+      if (botonVolver.contieneClic(mouseX, mouseY)) {
+        estado = MENU_APRENDICES; listaAprendices = null; mensaje = "";
+      }
+      break;
+      
+    case ASIGNAR_SESION:
+      activarCampoSiClic(campoCedulaAprendiz);
+      activarCampoSiClic(campoEspecialidadSesion);
+      if (botonBuscar.contieneClic(mouseX, mouseY)) {
+        accionVerificarAprendiz();
+      } else if (botonAsignar.contieneClic(mouseX, mouseY) && aprendizEncontrado != null) {
+        accionBuscarInstructoresDisponibles();
+      } else if (botonVolver.contieneClic(mouseX, mouseY)) {
+        estado = MENU_SESIONES; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
+      }
+      break;
+      
+    case SELECCIONAR_INSTRUCTOR_SESION:
+      for (int i = 0; i < botonesInstructoresDisponibles.size(); i++) {
+        if (botonesInstructoresDisponibles.get(i).contieneClic(mouseX, mouseY)) {
+          instructorSeleccionadoIndex = i;
+          accionAsignarSesionCompleta();
+          break;
+        }
+      }
+      if (botonVolver.contieneClic(mouseX, mouseY)) {
+        estado = ASIGNAR_SESION; mensaje = "";
+      }
+      break;
+      
+    case CONSULTAR_SESION:
+      activarCampoSiClic(campoCodigoSesion);
+      if (botonBuscar.contieneClic(mouseX, mouseY)) {
+        accionBuscarSesion();
+      } else if (botonVolver.contieneClic(mouseX, mouseY)) {
+        estado = MENU_SESIONES; limpiarCamposFormulario(); sesionEncontrada = null; mensaje = "";
+      }
+      break;
+      
+    case CANCELAR_SESION:
+      activarCampoSiClic(campoCodigoSesion);
+      if (botonEliminar.contieneClic(mouseX, mouseY)) {
+        accionCancelarSesion();
+      } else if (botonVolver.contieneClic(mouseX, mouseY)) {
+        estado = MENU_SESIONES; limpiarCamposFormulario(); mensaje = "";
+      }
+      break;
+      
+    case LISTAR_SESIONES:
+      if (botonVolver.contieneClic(mouseX, mouseY)) {
+        estado = MENU_SESIONES; listaSesiones = null; mensaje = "";
+      }
       break;
   }
 }
 
-void activarCampoSiClic(CampoTexto campo) {
-  if (campo.contieneClic(mouseX, mouseY)) {
-    campoCedula.activo = (campo == campoCedula);
-    campoNombre.activo = (campo == campoNombre);
-    campoEspecialidad.activo = (campo == campoEspecialidad);
-    campoTelefono.activo = (campo == campoTelefono);
-  }
-}
+// ================================================================
+// MANEJO DE TECLADO
+// ================================================================
 
-// ================================================================
-// Manejo de teclado (escribir en el campo activo)
-// ================================================================
 void keyPressed() {
   campoCedula.manejarTecla(key, keyCode);
   campoNombre.manejarTecla(key, keyCode);
   campoEspecialidad.manejarTecla(key, keyCode);
   campoTelefono.manejarTecla(key, keyCode);
+  campoCedulaAprendiz.manejarTecla(key, keyCode);
+  campoNombreAprendiz.manejarTecla(key, keyCode);
+  campoEspecialidadAprendiz.manejarTecla(key, keyCode);
+  campoCodigoSesion.manejarTecla(key, keyCode);
+  campoFechaSesion.manejarTecla(key, keyCode);
+  campoEspecialidadSesion.manejarTecla(key, keyCode);
 }
 
-// Al cerrar la aplicación, liberar el archivo correctamente.
+// ================================================================
+// CIERRE DE LA APLICACIÓN
+// ================================================================
+
 public void exit() {
-  archivoInstructores.cerrar();
+  if (archivoInstructores != null) archivoInstructores.cerrar();
+  if (archivoAprendices != null) archivoAprendices.cerrar();
+  if (archivoSesiones != null) archivoSesiones.cerrar();
   super.exit();
 }
