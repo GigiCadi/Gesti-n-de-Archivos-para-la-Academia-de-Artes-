@@ -107,9 +107,9 @@ void setup() {
   centroX = width / 2;
   centroY = height / 2;
   
-  archivoInstructores = new ArchivoInstructores("data/instructores.dat");
-  archivoAprendices = new ArchivoAprendices("data/aprendices.dat");
-  archivoSesiones = new ArchivoSesiones("data/sesiones.dat");
+  archivoInstructores = new ArchivoInstructores(sketchPath("data/instructores.dat"));
+  archivoAprendices = new ArchivoAprendices(sketchPath("data/aprendices.dat"));
+  archivoSesiones = new ArchivoSesiones(sketchPath("data/sesiones.dat"));
   
   if (!archivoInstructores.abrir()) {
     mensaje = "Error: No se pudo abrir el archivo de instructores.";
