@@ -261,6 +261,7 @@ void limpiarDatosTemporales() {
   instructorSeleccionadoIndex = -1;
   cedulaAprendizSeleccionado = "";
   especialidadSeleccionada = "";
+  fechaSesionSeleccionada = "";
 }
 
 boolean validarCedula(String cedula) {

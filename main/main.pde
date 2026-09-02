@@ -14,6 +14,8 @@ final int MENU_PRINCIPAL       = 0;
 final int MENU_INSTRUCTORES    = 1;
 final int MENU_APRENDICES      = 2;
 final int MENU_SESIONES        = 3;
+final int MENU_REPORTES        = 4;
+final int VER_REPORTE          = 40;
 
 // Sub-estados de instructores
 final int CREAR_INSTRUCTOR     = 10;
@@ -48,6 +50,7 @@ ArrayList<Boton> botonesMenuPrincipal;
 ArrayList<Boton> botonesMenuInstructores;
 ArrayList<Boton> botonesMenuAprendices;
 ArrayList<Boton> botonesMenuSesiones;
+ArrayList<Boton> botonesMenuReportes;
 ArrayList<Boton> botonesInstructoresDisponibles;
 
 // ---- Botones de acción ----
@@ -74,6 +77,7 @@ ArrayList<Sesion> listaSesiones = null;
 ArrayList<Instructor> instructoresDisponibles = null;
 String cedulaAprendizSeleccionado = "";
 String especialidadSeleccionada = "";
+String fechaSesionSeleccionada = "";
 int instructorSeleccionadoIndex = -1;
 
 // ---- Variables para posicionamiento dinámico ----
@@ -185,6 +189,12 @@ void inicializarBotones() {
   botonesMenuSesiones.add(new Boton(centroX - 150, height * 0.52f, 300, 55, "Listar sesiones", color(26, 115, 232), color(52, 152, 219)));
   botonesMenuSesiones.add(new Boton(centroX - 150, height * 0.63f, 300, 55, "← Volver", color(149, 165, 166), color(189, 195, 199)));
   
+  // ---- MENÚ DE REPORTES Y REINICIO ----
+  botonesMenuReportes = new ArrayList<Boton>();
+  botonesMenuReportes.add(new Boton(centroX - 175, height * 0.30f, 350, 55, "Ver reporte de disponibilidad", color(26, 115, 232), color(52, 152, 219)));
+  botonesMenuReportes.add(new Boton(centroX - 175, height * 0.42f, 350, 55, "Reiniciar contadores del mes", color(243, 156, 18), color(241, 196, 15)));
+  botonesMenuReportes.add(new Boton(centroX - 175, height * 0.54f, 350, 42, "← Volver", color(149, 165, 166), color(189, 195, 199)));
+
   // ---- BOTONES DE ACCIÓN ----
   float yBase = height * 0.78f;
   botonGuardar  = new Boton(centroX - 80, yBase, 160, 45, "Guardar", color(39, 174, 96), color(46, 204, 113));
@@ -208,7 +218,7 @@ void inicializarCampos() {
   
   campoCedulaAprendiz       = new CampoTexto(inicioX, height * 0.28f, anchoCampo, 38, "Cédula");
   campoNombreAprendiz       = new CampoTexto(inicioX, height * 0.38f, anchoCampo, 38, "Nombre");
-  campoEspecialidadAprendiz = new CampoTexto(inicioX, height * 0.48f, anchoCampo, 38, "Especialidad");
+  campoEspecialidadAprendiz = new CampoTexto(inicioX, height * 0.48f, anchoCampo, 38, "Especialidades (separadas por coma)");
   
   campoCodigoSesion = new CampoTexto(inicioX, height * 0.28f, anchoCampo, 38, "Código de sesión");
   campoFechaSesion  = new CampoTexto(inicioX, height * 0.38f, anchoCampo, 38, "Fecha (AAAA-MM-DD)");
@@ -229,6 +239,8 @@ void draw() {
     case MENU_INSTRUCTORES:     dibujarMenuInstructores(); break;
     case MENU_APRENDICES:       dibujarMenuAprendices(); break;
     case MENU_SESIONES:         dibujarMenuSesiones(); break;
+    case MENU_REPORTES:         dibujarMenuReportes(); break;
+    case VER_REPORTE:           dibujarReporte(); break;
     case CREAR_INSTRUCTOR:      dibujarFormularioCrearInstructor(); break;
     case CONSULTAR_INSTRUCTOR:  dibujarFormularioConsultarInstructor(); break;
     case ACTUALIZAR_INSTRUCTOR: dibujarFormularioActualizarInstructor(); break;
@@ -280,6 +292,98 @@ void dibujarMenuAprendices() {
 void dibujarMenuSesiones() {
   dibujarEncabezado("Gestión de Sesiones");
   for (Boton b : botonesMenuSesiones) b.dibujar();
+}
+
+void dibujarMenuReportes() {
+  dibujarEncabezado("Reportes y Reinicio Mensual");
+  for (Boton b : botonesMenuReportes) b.dibujar();
+}
+
+void dibujarReporte() {
+  dibujarEncabezado("Reporte de Disponibilidad y Sesiones");
+  botonVolver.dibujar();
+
+  ArrayList<Instructor> instructores = archivoInstructores.listarTodos();
+  ArrayList<Aprendiz> aprendices = archivoAprendices.listarTodos();
+  ArrayList<Sesion> sesiones = archivoSesiones.listarTodas();
+
+  // ---- Conteos por especialidad de instructores ----
+  HashMap<String, Integer> totalPorEspecialidad = new HashMap<String, Integer>();
+  HashMap<String, Integer> disponiblesPorEspecialidad = new HashMap<String, Integer>();
+  int instructoresDisponiblesTotal = 0;
+  for (Instructor inst : instructores) {
+    String esp = inst.especialidad;
+    totalPorEspecialidad.put(esp, (totalPorEspecialidad.containsKey(esp) ? totalPorEspecialidad.get(esp) : 0) + 1);
+    if (inst.estaDisponible()) {
+      instructoresDisponiblesTotal++;
+      disponiblesPorEspecialidad.put(esp, (disponiblesPorEspecialidad.containsKey(esp) ? disponiblesPorEspecialidad.get(esp) : 0) + 1);
+    }
+  }
+
+  // ---- Sesiones asignadas por especialidad ----
+  HashMap<String, Integer> sesionesPorEspecialidad = new HashMap<String, Integer>();
+  for (Sesion s : sesiones) {
+    String esp = s.especialidad;
+    sesionesPorEspecialidad.put(esp, (sesionesPorEspecialidad.containsKey(esp) ? sesionesPorEspecialidad.get(esp) : 0) + 1);
+  }
+
+  // ---- Aprendices con cupo disponible ----
+  int aprendicesConCupo = 0;
+  for (Aprendiz a : aprendices) {
+    if (a.tieneAlgunCupoDisponible()) aprendicesConCupo++;
+  }
+
+  float inicioXIzq = width * 0.06f;
+  float inicioXDer = width * 0.53f;
+  float y = height * 0.19f;
+
+  fill(20);
+  textAlign(LEFT, TOP);
+  textSize(17);
+  text("Resumen general", inicioXIzq, y);
+  y += 30;
+  textSize(14);
+  fill(60);
+  text("Instructores registrados: " + instructores.size(), inicioXIzq, y); y += 24;
+  text("Instructores disponibles (menos de " + ArchivoInstructores.MAX_SESIONES_MES + " sesiones): " + instructoresDisponiblesTotal, inicioXIzq, y); y += 24;
+  text("Aprendices registrados: " + aprendices.size(), inicioXIzq, y); y += 24;
+  text("Aprendices con al menos una especialidad con cupo: " + aprendicesConCupo, inicioXIzq, y); y += 24;
+  text("Sesiones activas asignadas: " + sesiones.size(), inicioXIzq, y); y += 34;
+
+  fill(20);
+  textSize(17);
+  text("Disponibilidad por especialidad (instructores)", inicioXIzq, y);
+  y += 30;
+  textSize(14);
+  fill(60);
+  if (totalPorEspecialidad.isEmpty()) {
+    text("No hay instructores registrados.", inicioXIzq, y);
+  } else {
+    for (String esp : totalPorEspecialidad.keySet()) {
+      int total = totalPorEspecialidad.get(esp);
+      int disp = disponiblesPorEspecialidad.containsKey(esp) ? disponiblesPorEspecialidad.get(esp) : 0;
+      text(esp + ": " + disp + " disponibles de " + total, inicioXIzq, y);
+      y += 24;
+      if (y > height - 90) break;
+    }
+  }
+
+  float yDer = height * 0.19f;
+  fill(20);
+  textSize(17);
+  text("Sesiones asignadas por especialidad", inicioXDer, yDer);
+  yDer += 30;
+  textSize(14);
+  fill(60);
+  if (sesionesPorEspecialidad.isEmpty()) {
+    text("No hay sesiones asignadas todavía.", inicioXDer, yDer);
+  } else {
+    for (String esp : sesionesPorEspecialidad.keySet()) {
+      text(esp + ": " + sesionesPorEspecialidad.get(esp) + " sesión(es)", inicioXDer, yDer);
+      yDer += 24;
+      if (yDer > height - 90) break;
+    }
+  }
 }
 
 void dibujarFormularioCrearInstructor() {
@@ -439,15 +543,13 @@ void dibujarListadoAprendices() {
     fill(100);
     text("Nombre", inicioX, y);
     text("Cédula", inicioX + 250, y);
-    text("Especialidad", inicioX + 400, y);
-    text("Sesiones", inicioX + 550, y);
+    text("Especialidades (sesiones/mes)", inicioX + 400, y);
     y += 30;
     fill(20);
     for (Aprendiz apr : listaAprendices) {
       text(apr.nombre, inicioX, y);
       text(apr.cedula, inicioX + 250, y);
-      text(apr.especialidad, inicioX + 400, y);
-      text(apr.sesionesRealizadas + "/" + Aprendiz.MAX_SESIONES_MES, inicioX + 550, y);
+      text(apr.especialidadesResumenCorto(), inicioX + 400, y);
       y += 30;
       if (y > height - 80) break;
     }
@@ -475,21 +577,24 @@ void dibujarFormularioAsignarSesion() {
     textAlign(LEFT, TOP);
     textSize(15);
     text("Aprendiz: " + aprendizEncontrado.nombre, inicioX, height * 0.34f);
-    text("Especialidad actual: " + aprendizEncontrado.especialidad, inicioX, height * 0.38f);
-    text("Sesiones realizadas: " + aprendizEncontrado.sesionesRealizadas + "/" + Aprendiz.MAX_SESIONES_MES, inicioX, height * 0.42f);
-    if (!aprendizEncontrado.estaDisponible()) {
+    text("Especialidades: " + aprendizEncontrado.especialidadesResumenCorto(), inicioX, height * 0.38f);
+    if (!aprendizEncontrado.tieneAlgunCupoDisponible()) {
       fill(200, 40, 40);
-      text("⚠ El aprendiz ya completó sus sesiones del mes", inicioX, height * 0.48f);
+      text("⚠ El aprendiz ya completó sus sesiones del mes en todas sus especialidades", inicioX, height * 0.44f);
     } else {
       fill(39, 174, 96);
-      text("✓ El aprendiz tiene cupo disponible", inicioX, height * 0.48f);
+      text("✓ El aprendiz tiene cupo disponible en al menos una especialidad", inicioX, height * 0.44f);
       fill(80);
-      text("Especialidad de la sesión:", inicioX, height * 0.54f);
+      text("Especialidad de la sesión (debe ser una que practique):", inicioX, height * 0.52f);
       campoEspecialidadSesion.x = inicioX;
-      campoEspecialidadSesion.y = height * 0.58f;
+      campoEspecialidadSesion.y = height * 0.57f;
       campoEspecialidadSesion.dibujar();
+      text("Fecha de la sesión (AAAA-MM-DD, hoy o futura; vacío = hoy):", inicioX, height * 0.63f);
+      campoFechaSesion.x = inicioX;
+      campoFechaSesion.y = height * 0.68f;
+      campoFechaSesion.dibujar();
       botonAsignar.x = inicioX;
-      botonAsignar.y = height * 0.68f;
+      botonAsignar.y = height * 0.78f;
       botonAsignar.dibujar();
     }
   }
@@ -502,7 +607,8 @@ void dibujarSeleccionInstructor() {
   fill(80);
   textAlign(LEFT, TOP);
   textSize(16);
-  text("Paso 2: Instructores disponibles para " + especialidadSeleccionada, inicioX, height * 0.18f);
+  text("Paso 2: Instructores disponibles para " + especialidadSeleccionada + 
+       " el " + fechaSesionSeleccionada, inicioX, height * 0.18f);
   if (instructoresDisponibles == null || instructoresDisponibles.isEmpty()) {
     fill(200, 40, 40);
     textAlign(CENTER, TOP);
@@ -518,12 +624,12 @@ void dibujarSeleccionInstructor() {
       botonesInstructoresDisponibles.add(new Boton(inicioX, y, 500, 42, 
         inst.nombre + " | " + inst.cedula + " | Sesiones: " + 
         inst.sesionesRealizadas + "/" + ArchivoInstructores.MAX_SESIONES_MES,
-        color(41, 128, 185), color(52, 152, 219), color(255)));
+        color(41, 128, 185), color(52, 152, 219)));
     } else {
       Boton b = botonesInstructoresDisponibles.get(index);
       b.x = inicioX;
       b.y = y;
-      b.etiqueta = inst.nombre + " | " + inst.cedula + " | Sesiones: " + 
+      b.label = inst.nombre + " | " + inst.cedula + " | Sesiones: " + 
                    inst.sesionesRealizadas + "/" + ArchivoInstructores.MAX_SESIONES_MES;
       b.dibujar();
     }
@@ -571,7 +677,7 @@ void dibujarFormularioCancelarSesion() {
   campoCodigoSesion.dibujar();
   botonEliminar.x = inicioX;
   botonEliminar.y = height * 0.40f;
-  botonEliminar.etiqueta = "Cancelar Sesión";
+  botonEliminar.label = "Cancelar Sesión";
   botonEliminar.dibujar();
   botonVolver.dibujar();
 }
@@ -716,12 +822,12 @@ void accionEliminarInstructor() {
 void accionGuardarAprendiz() {
   String cedula = campoCedulaAprendiz.contenido.trim();
   String nombre = campoNombreAprendiz.contenido.trim();
-  String especialidad = campoEspecialidadAprendiz.contenido.trim();
+  String especialidadesTexto = campoEspecialidadAprendiz.contenido.trim();
   if (!validarCedula(cedula)) {
     mostrarMensaje("Cédula inválida (solo dígitos, 6 a 15 caracteres).", true);
     return;
   }
-  if (nombre.isEmpty() || especialidad.isEmpty()) {
+  if (nombre.isEmpty() || especialidadesTexto.isEmpty()) {
     mostrarMensaje("Todos los campos son obligatorios.", true);
     return;
   }
@@ -729,13 +835,30 @@ void accionGuardarAprendiz() {
     mostrarMensaje("Ya existe un aprendiz con esa cédula.", true);
     return;
   }
-  Aprendiz nuevo = new Aprendiz(cedula, nombre, especialidad, 0);
+  ArrayList<String> especialidades = parsearEspecialidades(especialidadesTexto);
+  if (especialidades.isEmpty()) {
+    mostrarMensaje("Ingresa al menos una especialidad válida.", true);
+    return;
+  }
+  Aprendiz nuevo = new Aprendiz(cedula, nombre);
+  nuevo.establecerEspecialidades(especialidades);
   if (archivoAprendices.crear(nuevo)) {
     mostrarMensaje("Aprendiz creado correctamente.", false);
     limpiarCamposFormulario();
   } else {
     mostrarMensaje("No se pudo crear el aprendiz.", true);
   }
+}
+
+// Convierte "Baile, Pintura,  Canto" en una lista limpia sin vacíos
+ArrayList<String> parsearEspecialidades(String texto) {
+  ArrayList<String> resultado = new ArrayList<String>();
+  String[] partes = texto.split(",");
+  for (String parte : partes) {
+    String limpio = parte.trim();
+    if (!limpio.isEmpty()) resultado.add(limpio);
+  }
+  return resultado;
 }
 
 void accionBuscarAprendiz() {
@@ -764,7 +887,7 @@ void accionBuscarParaActualizarAprendiz() {
     return;
   }
   campoNombreAprendiz.contenido = apr.nombre;
-  campoEspecialidadAprendiz.contenido = apr.especialidad;
+  campoEspecialidadAprendiz.contenido = String.join(", ", apr.especialidades.keySet());
   mensaje = "";
 }
 
@@ -775,14 +898,19 @@ void accionGuardarActualizarAprendiz() {
     return;
   }
   String nombre = campoNombreAprendiz.contenido.trim();
-  String especialidad = campoEspecialidadAprendiz.contenido.trim();
-  if (nombre.isEmpty() || especialidad.isEmpty()) {
+  String especialidadesTexto = campoEspecialidadAprendiz.contenido.trim();
+  if (nombre.isEmpty() || especialidadesTexto.isEmpty()) {
     mostrarMensaje("Todos los campos son obligatorios.", true);
+    return;
+  }
+  ArrayList<String> especialidades = parsearEspecialidades(especialidadesTexto);
+  if (especialidades.isEmpty()) {
+    mostrarMensaje("Ingresa al menos una especialidad válida.", true);
     return;
   }
   Aprendiz actual = archivoAprendices.leer(cedula);
   actual.nombre = nombre;
-  actual.especialidad = especialidad;
+  actual.establecerEspecialidades(especialidades);
   if (archivoAprendices.actualizar(actual)) {
     mostrarMensaje("Aprendiz actualizado correctamente.", false);
   } else {
@@ -823,8 +951,8 @@ void accionVerificarAprendiz() {
     mostrarMensaje("No existe un aprendiz con esa cédula. Regístrelo primero.", true);
     return;
   }
-  if (!aprendizEncontrado.estaDisponible()) {
-    mostrarMensaje("El aprendiz ya completó sus " + Aprendiz.MAX_SESIONES_MES + " sesiones del mes.", true);
+  if (!aprendizEncontrado.tieneAlgunCupoDisponible()) {
+    mostrarMensaje("El aprendiz ya completó sus " + Aprendiz.MAX_SESIONES_MES + " sesiones del mes en todas sus especialidades.", true);
     aprendizEncontrado = null;
     return;
   }
@@ -840,6 +968,29 @@ void accionBuscarInstructoresDisponibles() {
   if (especialidadSeleccionada.isEmpty()) {
     mostrarMensaje("Ingresa la especialidad para la sesión.", true);
     return;
+  }
+  if (!aprendizEncontrado.tieneEspecialidad(especialidadSeleccionada)) {
+    mostrarMensaje("El aprendiz no practica la especialidad \"" + especialidadSeleccionada + "\".", true);
+    return;
+  }
+  if (!aprendizEncontrado.estaDisponibleEn(especialidadSeleccionada)) {
+    mostrarMensaje("El aprendiz ya completó sus " + Aprendiz.MAX_SESIONES_MES + " sesiones de " + especialidadSeleccionada + " este mes.", true);
+    return;
+  }
+  String fechaTexto = campoFechaSesion.contenido.trim();
+  String fechaHoy = obtenerFechaActual();
+  if (fechaTexto.isEmpty()) {
+    fechaSesionSeleccionada = fechaHoy;
+  } else {
+    if (!validarFecha(fechaTexto)) {
+      mostrarMensaje("Fecha inválida. Usa el formato AAAA-MM-DD.", true);
+      return;
+    }
+    if (compararFechas(fechaTexto, fechaHoy) < 0) {
+      mostrarMensaje("La fecha de la sesión no puede ser anterior a hoy.", true);
+      return;
+    }
+    fechaSesionSeleccionada = fechaTexto;
   }
   instructoresDisponibles = archivoInstructores.disponiblesPorEspecialidad(especialidadSeleccionada);
   if (instructoresDisponibles == null || instructoresDisponibles.isEmpty()) {
@@ -863,14 +1014,18 @@ void accionAsignarSesionCompleta() {
     return;
   }
   Aprendiz aprendiz = archivoAprendices.leer(cedulaAprendizSeleccionado);
-  if (aprendiz == null || !aprendiz.estaDisponible()) {
-    mostrarMensaje("El aprendiz ya no tiene cupo disponible.", true);
+  if (aprendiz == null || !aprendiz.estaDisponibleEn(especialidadSeleccionada)) {
+    mostrarMensaje("El aprendiz ya no tiene cupo disponible en esa especialidad.", true);
+    return;
+  }
+  String fechaSesion = fechaSesionSeleccionada.isEmpty() ? obtenerFechaActual() : fechaSesionSeleccionada;
+  if (archivoSesiones.existeSesionDuplicada(aprendiz.cedula, instructorSeleccionado.cedula, especialidadSeleccionada, fechaSesion)) {
+    mostrarMensaje("Ya existe una sesión igual para este aprendiz/instructor en esta fecha.", true);
     return;
   }
   String codigoSesion = generarCodigoSesion();
-  String fechaActual = obtenerFechaActual();
   Sesion nuevaSesion = new Sesion(codigoSesion, aprendiz.cedula, aprendiz.nombre,
-    especialidadSeleccionada, instructorSeleccionado.cedula, fechaActual);
+    especialidadSeleccionada, instructorSeleccionado.cedula, fechaSesion);
   if (!archivoSesiones.crear(nuevaSesion)) {
     mostrarMensaje("No se pudo crear la sesión.", true);
     return;
@@ -879,7 +1034,7 @@ void accionAsignarSesionCompleta() {
     mostrarMensaje("Error al actualizar instructor.", true);
     return;
   }
-  if (!archivoAprendices.incrementarSesion(aprendiz.cedula)) {
+  if (!archivoAprendices.incrementarSesion(aprendiz.cedula, especialidadSeleccionada)) {
     mostrarMensaje("Error al actualizar aprendiz.", true);
     return;
   }
@@ -928,11 +1083,7 @@ void accionCancelarSesion() {
     instructor.sesionesRealizadas--;
     archivoInstructores.actualizar(instructor);
   }
-  Aprendiz aprendiz = archivoAprendices.leer(sesion.cedulaAprendiz);
-  if (aprendiz != null) {
-    aprendiz.sesionesRealizadas--;
-    archivoAprendices.actualizar(aprendiz);
-  }
+  archivoAprendices.decrementarSesion(sesion.cedulaAprendiz, sesion.especialidad);
   mostrarMensaje("✓ Sesión cancelada correctamente.", false);
   campoCodigoSesion.limpiar();
   sesionEncontrada = null;
@@ -981,9 +1132,25 @@ void mousePressed() {
         estado = MENU_APRENDICES;
         limpiarDatosTemporales();
       } else if (botonesMenuPrincipal.get(3).contieneClic(mouseX, mouseY)) {
-        mostrarOpcionesReinicio();
+        estado = MENU_REPORTES; limpiarDatosTemporales(); mensaje = "";
       } else if (botonesMenuPrincipal.get(4).contieneClic(mouseX, mouseY)) {
         exit();
+      }
+      break;
+
+    case MENU_REPORTES:
+      if (botonesMenuReportes.get(0).contieneClic(mouseX, mouseY)) {
+        estado = VER_REPORTE; mensaje = "";
+      } else if (botonesMenuReportes.get(1).contieneClic(mouseX, mouseY)) {
+        mostrarOpcionesReinicio();
+      } else if (botonesMenuReportes.get(2).contieneClic(mouseX, mouseY)) {
+        estado = MENU_PRINCIPAL; mensaje = "";
+      }
+      break;
+
+    case VER_REPORTE:
+      if (botonVolver.contieneClic(mouseX, mouseY)) {
+        estado = MENU_REPORTES; mensaje = "";
       }
       break;
       
@@ -1034,12 +1201,12 @@ void mousePressed() {
     case MENU_SESIONES:
       if (botonesMenuSesiones.get(0).contieneClic(mouseX, mouseY)) {
         estado = ASIGNAR_SESION; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
-        botonBuscar.etiqueta = "Verificar";
+        botonBuscar.label = "Verificar";
       } else if (botonesMenuSesiones.get(1).contieneClic(mouseX, mouseY)) {
         estado = CONSULTAR_SESION; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
       } else if (botonesMenuSesiones.get(2).contieneClic(mouseX, mouseY)) {
         estado = CANCELAR_SESION; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
-        botonEliminar.etiqueta = "Cancelar Sesión";
+        botonEliminar.label = "Cancelar Sesión";
       } else if (botonesMenuSesiones.get(3).contieneClic(mouseX, mouseY)) {
         listaSesiones = archivoSesiones.listarTodas(); estado = LISTAR_SESIONES; mensaje = "";
       } else if (botonesMenuSesiones.get(4).contieneClic(mouseX, mouseY)) {
@@ -1201,16 +1368,50 @@ void mousePressed() {
 // ================================================================
 
 void keyPressed() {
-  campoCedula.manejarTecla(key, keyCode);
-  campoNombre.manejarTecla(key, keyCode);
-  campoEspecialidad.manejarTecla(key, keyCode);
-  campoTelefono.manejarTecla(key, keyCode);
-  campoCedulaAprendiz.manejarTecla(key, keyCode);
-  campoNombreAprendiz.manejarTecla(key, keyCode);
-  campoEspecialidadAprendiz.manejarTecla(key, keyCode);
-  campoCodigoSesion.manejarTecla(key, keyCode);
-  campoFechaSesion.manejarTecla(key, keyCode);
-  campoEspecialidadSesion.manejarTecla(key, keyCode);
+  // Solo se envían las teclas a los campos que realmente están
+  // visibles en la pantalla actual, en vez de actualizar los diez
+  // campos del sistema en cada pulsación.
+  switch (estado) {
+    case CREAR_INSTRUCTOR:
+    case ACTUALIZAR_INSTRUCTOR:
+      campoCedula.manejarTecla(key, keyCode);
+      campoNombre.manejarTecla(key, keyCode);
+      campoEspecialidad.manejarTecla(key, keyCode);
+      campoTelefono.manejarTecla(key, keyCode);
+      break;
+
+    case CONSULTAR_INSTRUCTOR:
+    case ELIMINAR_INSTRUCTOR:
+      campoCedula.manejarTecla(key, keyCode);
+      break;
+
+    case CREAR_APRENDIZ:
+    case ACTUALIZAR_APRENDIZ:
+      campoCedulaAprendiz.manejarTecla(key, keyCode);
+      campoNombreAprendiz.manejarTecla(key, keyCode);
+      campoEspecialidadAprendiz.manejarTecla(key, keyCode);
+      break;
+
+    case CONSULTAR_APRENDIZ:
+    case ELIMINAR_APRENDIZ:
+      campoCedulaAprendiz.manejarTecla(key, keyCode);
+      break;
+
+    case ASIGNAR_SESION:
+      campoCedulaAprendiz.manejarTecla(key, keyCode);
+      campoEspecialidadSesion.manejarTecla(key, keyCode);
+      campoFechaSesion.manejarTecla(key, keyCode);
+      break;
+
+    case CONSULTAR_SESION:
+    case CANCELAR_SESION:
+      campoCodigoSesion.manejarTecla(key, keyCode);
+      break;
+
+    default:
+      // Ningún campo de texto visible en este estado: no se hace nada.
+      break;
+  }
 }
 
 // ================================================================

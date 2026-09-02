@@ -18,10 +18,12 @@ class ArchivoInstructores {
   RandomAccessFile raf;
   String rutaArchivo;
   HashMap<String, Integer> indice;
+  ArrayList<Integer> espaciosLibres; // huecos dejados por instructores eliminados, listos para reutilizar
 
   ArchivoInstructores(String rutaArchivo) {
     this.rutaArchivo = rutaArchivo;
     this.indice = new HashMap<String, Integer>();
+    this.espaciosLibres = new ArrayList<Integer>();
   }
 
   boolean abrir() {
@@ -49,6 +51,7 @@ class ArchivoInstructores {
 
   private void construirIndice() throws IOException {
     indice.clear();
+    espaciosLibres.clear();
     long totalRegistros = raf.length() / RECORD_SIZE;
     for (int i = 0; i < totalRegistros; i++) {
       raf.seek((long) i * RECORD_SIZE);
@@ -57,6 +60,8 @@ class ArchivoInstructores {
       boolean eliminado = raf.readBoolean();
       if (!eliminado) {
         indice.put(cedula, i);
+      } else {
+        espaciosLibres.add(i);
       }
     }
   }
@@ -71,8 +76,13 @@ class ArchivoInstructores {
       return false;
     }
     try {
-      int nuevoRegistro = (int) (raf.length() / RECORD_SIZE);
-      raf.seek(raf.length());
+      int nuevoRegistro;
+      if (!espaciosLibres.isEmpty()) {
+        nuevoRegistro = espaciosLibres.remove(espaciosLibres.size() - 1);
+      } else {
+        nuevoRegistro = (int) (raf.length() / RECORD_SIZE);
+      }
+      raf.seek((long) nuevoRegistro * RECORD_SIZE);
       escribirRegistro(inst, false);
       indice.put(inst.cedula, nuevoRegistro);
       return true;
@@ -121,6 +131,7 @@ class ArchivoInstructores {
       raf.seek(posBandera);
       raf.writeBoolean(true);
       indice.remove(cedula);
+      espaciosLibres.add(numRegistro);
       return true;
     } catch (IOException e) {
       println("ERROR al eliminar instructor: " + e.getMessage());
