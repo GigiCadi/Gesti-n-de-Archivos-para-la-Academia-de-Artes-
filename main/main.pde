@@ -1,6 +1,7 @@
 // ================================================================
 // LABORATORIO 1 - Manejo de Archivos en Java (Processing)
 // Academia de Artes Barranquilla - SISTEMA COMPLETO
+// Rediseño de interfaz: barra lateral + panel de módulos
 // ================================================================
 
 import java.io.RandomAccessFile;
@@ -39,6 +40,11 @@ final int LISTAR_SESIONES      = 33;
 final int SELECCIONAR_INSTRUCTOR_SESION = 34;
 
 int estado = MENU_PRINCIPAL;
+
+// ---- Barra lateral ----
+final float SIDEBAR_WIDTH = 230;
+float contentX, contentW;
+ArrayList<ItemNav> itemsNav;
 
 // ---- Archivos ----
 ArchivoInstructores archivoInstructores;
@@ -83,6 +89,17 @@ int instructorSeleccionadoIndex = -1;
 // ---- Variables para posicionamiento dinámico ----
 float centroX, centroY;
 
+// ---- Layout tipo "panel/dashboard" para el módulo de Sesiones ----
+float sidebarAncho = 230;
+float topBarAlto = 64;
+float heroAlto = 230;
+float breadcrumbAlto = 46;
+PImage imgEncabezadoSesiones;
+Boton botonVolverSesiones;
+
+// ---- DECLARACIÓN ÚNICA DE botonesSidebar ----
+ArrayList<Boton> botonesSidebar = new ArrayList<Boton>();
+
 // ================================================================
 // SETUP: Inicialización del sistema
 // ================================================================
@@ -90,7 +107,7 @@ void setup() {
   size(1280, 720);
   surface.setTitle("Academia de Artes Barranquilla - Sistema de Gestión");
   surface.setResizable(true);
-  
+
   try {
     java.awt.Frame frame = (java.awt.Frame) surface.getNative();
     frame.setExtendedState(java.awt.Frame.MAXIMIZED_BOTH);
@@ -100,17 +117,27 @@ void setup() {
     surface.setSize(displayWidth, displayHeight);
     println("Nota: No se pudo maximizar automáticamente.");
   }
-  
+
   pixelDensity(1);
   noSmooth();
-  
+
   centroX = width / 2;
   centroY = height / 2;
-  
+  contentX = SIDEBAR_WIDTH;
+  contentW = width - SIDEBAR_WIDTH;
+
+  sidebarAncho = max(width * 0.145f, 205);
+  topBarAlto = max(height * 0.058f, 52);
+  heroAlto = height * 0.26f;
+  breadcrumbAlto = max(height * 0.042f, 36);
+
+  // Cambia el nombre de tu imagen aquí si es diferente
+  imgEncabezadoSesiones = loadImage("header_sesiones.jpeg");
+
   archivoInstructores = new ArchivoInstructores(sketchPath("data/instructores.dat"));
   archivoAprendices = new ArchivoAprendices(sketchPath("data/aprendices.dat"));
   archivoSesiones = new ArchivoSesiones(sketchPath("data/sesiones.dat"));
-  
+
   if (!archivoInstructores.abrir()) {
     mensaje = "Error: No se pudo abrir el archivo de instructores.";
     colorMensaje = color(200, 40, 40);
@@ -123,103 +150,128 @@ void setup() {
     mensaje = "Error: No se pudo abrir el archivo de sesiones.";
     colorMensaje = color(200, 40, 40);
   }
-  
+
   inicializarBotones();
   inicializarCampos();
+  inicializarSidebar();
 }
 
 // ================================================================
 // INICIALIZACIÓN DE COMPONENTES
 // ================================================================
 
+void inicializarSidebar() {
+  itemsNav = new ArrayList<ItemNav>();
+  itemsNav.add(new ItemNav("home",         "Inicio",        MENU_PRINCIPAL));
+  itemsNav.add(new ItemNav("instructores", "Instructores",  MENU_INSTRUCTORES));
+  itemsNav.add(new ItemNav("aprendices",   "Aprendices",    MENU_APRENDICES));
+  itemsNav.add(new ItemNav("sesiones",     "Sesiones",      MENU_SESIONES));
+  itemsNav.add(new ItemNav("reportes",     "Reportes",      MENU_REPORTES));
+  itemsNav.add(new ItemNav("reinicio",     "Reinicio",      -1));
+  itemsNav.add(new ItemNav("salir",        "Salir",         -2));
+}
+
 void inicializarBotones() {
-  // ---- MENÚ PRINCIPAL (estilo imagen) ----
+  // El menú principal (tarjetas de módulos) ahora se construye
+  // dinámicamente cada cuadro en dibujarMenuPrincipal()
   botonesMenuPrincipal = new ArrayList<Boton>();
-  
-  // Módulo 1: Sesiones (Azul)
-  botonesMenuPrincipal.add(new Boton(centroX - 500, height * 0.23f, 350, 90, 
-    "MÓDULO DE SESIONES", "Administra las sesiones de clases", 
-    color(26, 115, 232), color(52, 152, 219)));
-  
-  // Módulo 2: Instructores (Verde)
-  botonesMenuPrincipal.add(new Boton(centroX + 150, height * 0.23f, 350, 90, 
-    "MÓDULO DE INSTRUCTORES", "Gestiona la información de los instructores", 
-    color(39, 174, 96), color(46, 204, 113)));
-  
-  // Módulo 3: Aprendices (Morado)
-  botonesMenuPrincipal.add(new Boton(centroX - 500, height * 0.40f, 350, 90, 
-    "MÓDULO DE APRENDICES", "Gestiona la información de los aprendices", 
-    color(155, 89, 182), color(169, 105, 197)));
-  
-  // Módulo 4: Reinicio (Amarillo)
-  botonesMenuPrincipal.add(new Boton(centroX + 150, height * 0.40f, 350, 90, 
-    "REINICIO Y REPORTES", "Reinicia contadores y genera reportes", 
-    color(243, 156, 18), color(241, 196, 15)));
-  
-  // Módulo 5: Salir (Rojo)
-  botonesMenuPrincipal.add(new Boton(centroX - 120, height * 0.57f, 240, 60, 
-    "SALIR", "Guarda los cambios y sale del sistema", 
-    color(192, 57, 43), color(231, 76, 60)));
-  
+
   // ---- MENÚ DE INSTRUCTORES ----
   botonesMenuInstructores = new ArrayList<Boton>();
-  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.22f, 300, 48, "Crear instructor", color(26, 115, 232), color(52, 152, 219)));
-  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.30f, 300, 48, "Consultar instructor", color(26, 115, 232), color(52, 152, 219)));
-  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.38f, 300, 48, "Actualizar instructor", color(26, 115, 232), color(52, 152, 219)));
-  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.46f, 300, 48, "Eliminar instructor", color(192, 57, 43), color(231, 76, 60)));
-  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.54f, 300, 48, "Listar instructores", color(26, 115, 232), color(52, 152, 219)));
-  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.62f, 300, 48, "Reiniciar sesiones del mes", color(243, 156, 18), color(241, 196, 15)));
+  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.22f, 300, 48, "Crear instructor", color(30, 120, 220), color(52, 152, 219)));
+  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.30f, 300, 48, "Consultar instructor", color(30, 120, 220), color(52, 152, 219)));
+  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.38f, 300, 48, "Actualizar instructor", color(30, 120, 220), color(52, 152, 219)));
+  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.46f, 300, 48, "Eliminar instructor", color(200, 50, 50), color(231, 76, 60)));
+  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.54f, 300, 48, "Listar instructores", color(30, 120, 220), color(52, 152, 219)));
+  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.62f, 300, 48, "Reiniciar sesiones del mes", color(220, 160, 30), color(241, 196, 15)));
   botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.72f, 300, 42, "← Volver", color(149, 165, 166), color(189, 195, 199)));
-  
+
   // ---- MENÚ DE APRENDICES ----
   botonesMenuAprendices = new ArrayList<Boton>();
-  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.22f, 300, 48, "Crear aprendiz", color(155, 89, 182), color(169, 105, 197)));
-  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.30f, 300, 48, "Consultar aprendiz", color(155, 89, 182), color(169, 105, 197)));
-  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.38f, 300, 48, "Actualizar aprendiz", color(155, 89, 182), color(169, 105, 197)));
-  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.46f, 300, 48, "Eliminar aprendiz", color(192, 57, 43), color(231, 76, 60)));
-  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.54f, 300, 48, "Listar aprendices", color(155, 89, 182), color(169, 105, 197)));
-  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.62f, 300, 48, "Reiniciar sesiones del mes", color(243, 156, 18), color(241, 196, 15)));
+  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.22f, 300, 48, "Crear aprendiz", color(150, 70, 200), color(169, 105, 197)));
+  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.30f, 300, 48, "Consultar aprendiz", color(150, 70, 200), color(169, 105, 197)));
+  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.38f, 300, 48, "Actualizar aprendiz", color(150, 70, 200), color(169, 105, 197)));
+  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.46f, 300, 48, "Eliminar aprendiz", color(200, 50, 50), color(231, 76, 60)));
+  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.54f, 300, 48, "Listar aprendices", color(150, 70, 200), color(169, 105, 197)));
+  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.62f, 300, 48, "Reiniciar sesiones del mes", color(220, 160, 30), color(241, 196, 15)));
   botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.72f, 300, 42, "← Volver", color(149, 165, 166), color(189, 195, 199)));
-  
-  // ---- MENÚ DE SESIONES ----
+
+  // ---- MENÚ DE SESIONES (ESTILO NUEVO CON TARJETAS) ----
   botonesMenuSesiones = new ArrayList<Boton>();
-  botonesMenuSesiones.add(new Boton(centroX - 150, height * 0.25f, 300, 55, "Asignar sesión", color(26, 115, 232), color(52, 152, 219)));
-  botonesMenuSesiones.add(new Boton(centroX - 150, height * 0.34f, 300, 55, "Consultar sesión", color(26, 115, 232), color(52, 152, 219)));
-  botonesMenuSesiones.add(new Boton(centroX - 150, height * 0.43f, 300, 55, "Cancelar sesión", color(192, 57, 43), color(231, 76, 60)));
-  botonesMenuSesiones.add(new Boton(centroX - 150, height * 0.52f, 300, 55, "Listar sesiones", color(26, 115, 232), color(52, 152, 219)));
-  botonesMenuSesiones.add(new Boton(centroX - 150, height * 0.63f, 300, 55, "← Volver", color(149, 165, 166), color(189, 195, 199)));
-  
+
+  float contX = sidebarAncho + width * 0.022f;
+  float contW = width - sidebarAncho - width * 0.044f;
+  float gap = width * 0.011f;
+  float cardW = (contW - gap * 3) / 4.0f;
+  float cardH = height * 0.175f;
+  float fila1Y = topBarAlto + heroAlto + breadcrumbAlto + height * 0.115f;
+  float fila2Y = fila1Y + cardH + height * 0.022f;
+
+  color azulClaro   = color(214, 234, 255);
+  color azulTexto   = color(26, 115, 232);
+  color verdeClaro  = color(215, 245, 227);
+  color verdeTexto  = color(39, 174, 96);
+  color rojoClaro   = color(255, 219, 216);
+  color rojoTexto   = color(192, 57, 43);
+  color moradoClaro = color(233, 217, 245);
+  color moradoTexto = color(142, 68, 173);
+  color grisClaro   = color(225, 227, 230);
+  color grisTexto   = color(120, 128, 138);
+
+  // CORREGIDO: Cada botón ahora usa el constructor correcto con 3 colores
+  botonesMenuSesiones.add(new Boton(contX, fila1Y, cardW, cardH,
+    "Asignar Sesión", "Agenda una nueva sesión para un aprendiz.",
+    "calendario", azulClaro, azulTexto, azulTexto));
+    
+  botonesMenuSesiones.add(new Boton(contX + (cardW + gap), fila1Y, cardW, cardH,
+    "Consultar Sesión", "Busca la información de una sesión por su código.",
+    "buscar", verdeClaro, verdeTexto, verdeTexto));
+    
+  botonesMenuSesiones.add(new Boton(contX + 2 * (cardW + gap), fila1Y, cardW, cardH,
+    "Cancelar Sesión", "Cancela una sesión programada a futuro.",
+    "cancelar", rojoClaro, rojoTexto, rojoTexto));
+    
+  botonesMenuSesiones.add(new Boton(contX + 3 * (cardW + gap), fila1Y, cardW, cardH,
+    "Listar Sesiones", "Visualiza todas las sesiones registradas.",
+    "lista", moradoClaro, moradoTexto, moradoTexto));
+    
+  botonesMenuSesiones.add(new Boton(contX, fila2Y, cardW, cardH,
+    "Volver", "Regresa al menú principal.",
+    "volver", grisClaro, grisTexto, grisTexto));
+
   // ---- MENÚ DE REPORTES Y REINICIO ----
   botonesMenuReportes = new ArrayList<Boton>();
-  botonesMenuReportes.add(new Boton(centroX - 175, height * 0.30f, 350, 55, "Ver reporte de disponibilidad", color(26, 115, 232), color(52, 152, 219)));
-  botonesMenuReportes.add(new Boton(centroX - 175, height * 0.42f, 350, 55, "Reiniciar contadores del mes", color(243, 156, 18), color(241, 196, 15)));
+  botonesMenuReportes.add(new Boton(centroX - 175, height * 0.30f, 350, 55, "Ver reporte de disponibilidad", color(30, 120, 220), color(52, 152, 219)));
+  botonesMenuReportes.add(new Boton(centroX - 175, height * 0.42f, 350, 55, "Reiniciar contadores del mes", color(220, 160, 30), color(241, 196, 15)));
   botonesMenuReportes.add(new Boton(centroX - 175, height * 0.54f, 350, 42, "← Volver", color(149, 165, 166), color(189, 195, 199)));
 
   // ---- BOTONES DE ACCIÓN ----
   float yBase = height * 0.78f;
-  botonGuardar  = new Boton(centroX - 80, yBase, 160, 45, "Guardar", color(39, 174, 96), color(46, 204, 113));
-  botonBuscar   = new Boton(centroX + 170, height * 0.28f, 120, 40, "Buscar", color(26, 115, 232), color(52, 152, 219));
-  botonEliminar = new Boton(centroX - 80, height * 0.40f, 160, 45, "Eliminar", color(192, 57, 43), color(231, 76, 60));
+  botonGuardar  = new Boton(centroX - 80, yBase, 160, 45, "Guardar", color(40, 180, 100), color(46, 204, 113));
+  botonBuscar   = new Boton(centroX + 170, height * 0.28f, 120, 40, "Buscar", color(30, 120, 220), color(52, 152, 219));
+  botonEliminar = new Boton(centroX - 80, height * 0.40f, 160, 45, "Eliminar", color(200, 50, 50), color(231, 76, 60));
   botonCancelar = new Boton(centroX + 100, yBase, 160, 45, "Cancelar", color(149, 165, 166), color(189, 195, 199));
   botonVolver   = new Boton(width * 0.04f, height * 0.88f, 130, 42, "← Volver", color(149, 165, 166), color(189, 195, 199));
-  botonAsignar  = new Boton(centroX - 100, yBase, 200, 45, "Asignar Sesión", color(26, 115, 232), color(52, 152, 219));
-  
+  botonAsignar  = new Boton(centroX - 100, yBase, 200, 45, "Asignar Sesión", color(30, 120, 220), color(52, 152, 219));
+  botonVolverSesiones = new Boton(sidebarAncho + width * 0.022f, height - 96, 130, 42,
+    "← Volver", color(149, 165, 166), color(189, 195, 199));
+
   botonesInstructoresDisponibles = new ArrayList<Boton>();
 }
 
 void inicializarCampos() {
   float anchoCampo = 340;
   float inicioX = centroX - anchoCampo/2;
-  
+
   campoCedula       = new CampoTexto(inicioX, height * 0.28f, anchoCampo, 38, "Cédula");
   campoNombre       = new CampoTexto(inicioX, height * 0.38f, anchoCampo, 38, "Nombre");
   campoEspecialidad = new CampoTexto(inicioX, height * 0.48f, anchoCampo, 38, "Especialidad");
   campoTelefono     = new CampoTexto(inicioX, height * 0.58f, anchoCampo, 38, "Teléfono");
-  
+
   campoCedulaAprendiz       = new CampoTexto(inicioX, height * 0.28f, anchoCampo, 38, "Cédula");
   campoNombreAprendiz       = new CampoTexto(inicioX, height * 0.38f, anchoCampo, 38, "Nombre");
   campoEspecialidadAprendiz = new CampoTexto(inicioX, height * 0.48f, anchoCampo, 38, "Especialidades (separadas por coma)");
-  
+
   campoCodigoSesion = new CampoTexto(inicioX, height * 0.28f, anchoCampo, 38, "Código de sesión");
   campoFechaSesion  = new CampoTexto(inicioX, height * 0.38f, anchoCampo, 38, "Fecha (AAAA-MM-DD)");
   campoEspecialidadSesion = new CampoTexto(inicioX, height * 0.52f, anchoCampo, 38, "Especialidad");
@@ -229,11 +281,17 @@ void inicializarCampos() {
 // DRAW: Bucle principal de dibujo
 // ================================================================
 void draw() {
-  centroX = width / 2;
+  contentX = SIDEBAR_WIDTH;
+  contentW = width - SIDEBAR_WIDTH;
+  centroX = contentX + contentW / 2;
   centroY = height / 2;
-  
+
+  // Estos botones se reposicionan cada cuadro
+  botonVolver.x = contentX + contentW * 0.04f;
+  botonVolver.y = height * 0.88f;
+
   background(240, 245, 250);
-  
+
   switch (estado) {
     case MENU_PRINCIPAL:        dibujarMenuPrincipal(); break;
     case MENU_INSTRUCTORES:     dibujarMenuInstructores(); break;
@@ -258,7 +316,10 @@ void draw() {
     case LISTAR_SESIONES:       dibujarListadoSesiones(); break;
     default: break;
   }
-  
+
+  // La barra lateral se dibuja al final
+  dibujarSidebar();
+
   dibujarMensaje();
 }
 
@@ -266,39 +327,127 @@ void draw() {
 // FUNCIONES DE DIBUJO PARA CADA PANTALLA
 // ================================================================
 
+// ---- MENÚ PRINCIPAL ----
 void dibujarMenuPrincipal() {
-  dibujarEncabezado("Academia de Artes Barranquilla");
-  fill(80);
+  // ---- Banner tipo "hero" con el nombre de la academia ----
+  float heroH = constrain(height * 0.32f, 200, 300);
+
+  noStroke();
+  fill(28, 34, 58);
+  rect(contentX, 0, contentW, heroH);
+
+  // Franja decorativa dorada al pie del banner
+  fill(230, 180, 60);
+  rect(contentX, heroH - 3, contentW, 3);
+
+  fill(230, 180, 60);
+  textAlign(CENTER, CENTER);
+  textSize(15);
+  text("A C A D E M I A   D E   A R T E S", contentX + contentW/2, heroH * 0.34f);
+
+  fill(255);
+  textSize(44);
+  text("BARRANQUILLA", contentX + contentW/2, heroH * 0.55f);
+
+  fill(255, 255, 255, 220);
+  textSize(15);
+  text("S I S T E M A   D E   G E S T I Ó N", contentX + contentW/2, heroH * 0.75f);
+
+  stroke(230, 180, 60);
+  strokeWeight(2);
+  line(contentX + contentW/2 - 60, heroH * 0.86f, contentX + contentW/2 + 60, heroH * 0.86f);
+  noStroke();
+
+  // ---- Título "MÓDULOS DEL SISTEMA" ----
+  float yTitulo = heroH + 40;
+  fill(COLOR_TEXTO);
   textAlign(CENTER, TOP);
-  textSize(16);
-  text("Sistema de Gestión de Instructores, Aprendices y Sesiones", width/2, height * 0.12f);
-  for (Boton b : botonesMenuPrincipal) b.dibujar();
-  fill(150, 180);
+  textSize(24);
+  text("MÓDULOS DEL SISTEMA", contentX + contentW/2, yTitulo);
+
+  stroke(230, 180, 60);
+  strokeWeight(2);
+  line(contentX + contentW/2 - 40, yTitulo + 36, contentX + contentW/2 + 40, yTitulo + 36);
+  noStroke();
+
+  // ---- Tarjetas de los 5 módulos, en una sola fila ----
+  float cardY = yTitulo + 62;
+  float cardH = min(height - cardY - 55, 270);
+  float margen = contentW * 0.035f;
+  float gap = 16;
+  float cardW = (contentW - margen * 2 - gap * 4) / 5;
+  float cardXBase = contentX + margen;
+
+  String[] numeros   = {"1", "2", "3", "4", "5"};
+  String[] iconos    = {"sesiones", "instructores", "aprendices", "reportes", "salir"};
+  String[] titulos   = {
+    "MÓDULO DE\nSESIONES",
+    "MÓDULO DE\nINSTRUCTORES",
+    "MÓDULO DE\nAPRENDICES",
+    "MÓDULO DE\nREINICIO Y REPORTES",
+    "SALIR"
+  };
+  String[] descripciones = {
+    "Administra las sesiones de clases: asignar, consultar, cancelar y listar sesiones del mes.",
+    "Gestiona la información de los instructores: crear, consultar, actualizar, eliminar y listar con sus sesiones.",
+    "Gestiona la información de los aprendices: crear, consultar, actualizar, eliminar y listar con sus sesiones.",
+    "Reinicia contadores y genera reportes de disponibilidad de instructores, aprendices y del mes completo.",
+    "Guarda los cambios y sale del sistema o sale sin guardar con confirmación."
+  };
+  color[] colores = {COLOR_SESIONES, COLOR_INSTRUCTORES, COLOR_APRENDICES, COLOR_REPORTES, COLOR_SALIR};
+
+  botonesMenuPrincipal.clear();
+  for (int i = 0; i < 5; i++) {
+    float x = cardXBase + i * (cardW + gap);
+    Boton b = new Boton(x, cardY, cardW, cardH, numeros[i], titulos[i], descripciones[i], colores[i], colores[i]);
+    botonesMenuPrincipal.add(b);
+    dibujarTarjetaModulo(b, iconos[i]);
+  }
+
+  fill(150);
   textAlign(CENTER, BOTTOM);
-  textSize(12);
-  text("© 2025 Academia de Artes Barranquilla - Arte que transforma, cultura que nos une", width/2, height-15);
+  textSize(11);
+  text("© 2025 Academia de Artes Barranquilla — Arte que transforma, cultura que nos une",
+       contentX + contentW/2, height - 12);
 }
 
+// ---- MENÚ INSTRUCTORES ----
 void dibujarMenuInstructores() {
   dibujarEncabezado("Gestión de Instructores");
   for (Boton b : botonesMenuInstructores) b.dibujar();
 }
 
+// ---- MENÚ APRENDICES ----
 void dibujarMenuAprendices() {
   dibujarEncabezado("Gestión de Aprendices");
   for (Boton b : botonesMenuAprendices) b.dibujar();
 }
 
+// ---- MENÚ SESIONES (NUEVO ESTILO CON SIDEBAR + HERO + TARJETAS) ----
 void dibujarMenuSesiones() {
-  dibujarEncabezado("Gestión de Sesiones");
+  background(COLOR_FONDO);
+  dibujarBarraLateral("Sesiones");
+  dibujarBarraSuperior();
+  dibujarHeroSesiones();
+  dibujarBreadcrumb("Módulo de Sesiones");
+
+  float contX = sidebarAncho + width * 0.022f;
+  float tituloY = topBarAlto + heroAlto + breadcrumbAlto + height * 0.020f;
+  dibujarTituloModulo(contX, tituloY, "Módulo de Sesiones", "GESTIÓN Y SEGUIMIENTO",
+    "“El compromiso también", "se aprende en comunidad”");
+
   for (Boton b : botonesMenuSesiones) b.dibujar();
+
+  dibujarPieSesiones();
 }
 
+// ---- MENÚ REPORTES ----
 void dibujarMenuReportes() {
   dibujarEncabezado("Reportes y Reinicio Mensual");
   for (Boton b : botonesMenuReportes) b.dibujar();
 }
 
+// ---- REPORTE ----
 void dibujarReporte() {
   dibujarEncabezado("Reporte de Disponibilidad y Sesiones");
   botonVolver.dibujar();
@@ -333,8 +482,8 @@ void dibujarReporte() {
     if (a.tieneAlgunCupoDisponible()) aprendicesConCupo++;
   }
 
-  float inicioXIzq = width * 0.06f;
-  float inicioXDer = width * 0.53f;
+  float inicioXIzq = contentX + contentW * 0.05f;
+  float inicioXDer = contentX + contentW * 0.53f;
   float y = height * 0.19f;
 
   fill(20);
@@ -385,6 +534,10 @@ void dibujarReporte() {
     }
   }
 }
+
+// ================================================================
+// FUNCIONES DE DIBUJO - FORMULARIOS Y LISTADOS
+// ================================================================
 
 void dibujarFormularioCrearInstructor() {
   dibujarEncabezado("Crear Instructor");
@@ -448,7 +601,7 @@ void dibujarListadoInstructores() {
   dibujarEncabezado("Instructores Registrados");
   botonVolver.dibujar();
   if (listaInstructores == null) listaInstructores = archivoInstructores.listarTodos();
-  float inicioX = width * 0.08f;
+  float inicioX = contentX + contentW * 0.06f;
   float y = height * 0.20f;
   fill(20);
   textAlign(LEFT, TOP);
@@ -532,7 +685,7 @@ void dibujarListadoAprendices() {
   dibujarEncabezado("Aprendices Registrados");
   botonVolver.dibujar();
   if (listaAprendices == null) listaAprendices = archivoAprendices.listarTodos();
-  float inicioX = width * 0.08f;
+  float inicioX = contentX + contentW * 0.06f;
   float y = height * 0.20f;
   fill(20);
   textAlign(LEFT, TOP);
@@ -556,18 +709,23 @@ void dibujarListadoAprendices() {
   }
 }
 
+// ================================================================
+// FORMULARIOS DEL MÓDULO DE SESIONES (CON NUEVO ESTILO)
+// ================================================================
+
 void dibujarFormularioAsignarSesion() {
-  dibujarEncabezado("Asignar Sesión");
-  float inicioX = centroX - 170;
-  fill(80);
+  float contentTop = dibujarEncabezadoSesionesSub("Asignar Sesión");
+  float inicioX = sidebarAncho + width * 0.022f;
+
+  fill(COLOR_GRIS_DESC);
   textAlign(LEFT, TOP);
   textSize(14);
-  text("Paso 1: Ingresa la cédula del aprendiz", inicioX, height * 0.18f);
+  text("Paso 1: Ingresa la cédula del aprendiz", inicioX, contentTop);
   campoCedulaAprendiz.x = inicioX;
-  campoCedulaAprendiz.y = height * 0.24f;
+  campoCedulaAprendiz.y = contentTop + 34;
   campoCedulaAprendiz.dibujar();
   botonBuscar.x = inicioX + 360;
-  botonBuscar.y = height * 0.23f;
+  botonBuscar.y = contentTop + 32;
   botonBuscar.w = 120;
   botonBuscar.h = 40;
   botonBuscar.label = "Verificar";
@@ -576,60 +734,62 @@ void dibujarFormularioAsignarSesion() {
     fill(20);
     textAlign(LEFT, TOP);
     textSize(15);
-    text("Aprendiz: " + aprendizEncontrado.nombre, inicioX, height * 0.34f);
-    text("Especialidades: " + aprendizEncontrado.especialidadesResumenCorto(), inicioX, height * 0.38f);
+    text("Aprendiz: " + aprendizEncontrado.nombre, inicioX, contentTop + 90);
+    text("Especialidades: " + aprendizEncontrado.especialidadesResumenCorto(), inicioX, contentTop + 118);
     if (!aprendizEncontrado.tieneAlgunCupoDisponible()) {
       fill(200, 40, 40);
-      text("⚠ El aprendiz ya completó sus sesiones del mes en todas sus especialidades", inicioX, height * 0.44f);
+      text("⚠ El aprendiz ya completó sus sesiones del mes en todas sus especialidades", inicioX, contentTop + 152);
     } else {
       fill(39, 174, 96);
-      text("✓ El aprendiz tiene cupo disponible en al menos una especialidad", inicioX, height * 0.44f);
+      text("✓ El aprendiz tiene cupo disponible en al menos una especialidad", inicioX, contentTop + 152);
       fill(80);
-      text("Especialidad de la sesión (debe ser una que practique):", inicioX, height * 0.52f);
+      text("Especialidad de la sesión (debe ser una que practique):", inicioX, contentTop + 194);
       campoEspecialidadSesion.x = inicioX;
-      campoEspecialidadSesion.y = height * 0.57f;
+      campoEspecialidadSesion.y = contentTop + 220;
       campoEspecialidadSesion.dibujar();
-      text("Fecha de la sesión (AAAA-MM-DD, hoy o futura; vacío = hoy):", inicioX, height * 0.63f);
+      text("Fecha de la sesión (AAAA-MM-DD, hoy o futura; vacío = hoy):", inicioX, contentTop + 274);
       campoFechaSesion.x = inicioX;
-      campoFechaSesion.y = height * 0.68f;
+      campoFechaSesion.y = contentTop + 300;
       campoFechaSesion.dibujar();
       botonAsignar.x = inicioX;
-      botonAsignar.y = height * 0.78f;
+      botonAsignar.y = contentTop + 360;
       botonAsignar.dibujar();
     }
   }
-  botonVolver.dibujar();
+  botonVolverSesiones.dibujar();
+  dibujarPieSesiones();
 }
 
 void dibujarSeleccionInstructor() {
-  dibujarEncabezado("Seleccionar Instructor");
-  float inicioX = centroX - 250;
-  fill(80);
+  float contentTop = dibujarEncabezadoSesionesSub("Seleccionar Instructor");
+  float inicioX = sidebarAncho + width * 0.022f;
+  fill(COLOR_GRIS_DESC);
   textAlign(LEFT, TOP);
-  textSize(16);
-  text("Paso 2: Instructores disponibles para " + especialidadSeleccionada + 
-       " el " + fechaSesionSeleccionada, inicioX, height * 0.18f);
+  textSize(15);
+  text("Paso 2: Instructores disponibles para " + especialidadSeleccionada +
+       " el " + fechaSesionSeleccionada, inicioX, contentTop);
   if (instructoresDisponibles == null || instructoresDisponibles.isEmpty()) {
     fill(200, 40, 40);
-    textAlign(CENTER, TOP);
-    textSize(18);
-    text("No hay instructores disponibles para esta especialidad", width/2, height * 0.30f);
-    botonVolver.dibujar();
+    textAlign(LEFT, TOP);
+    textSize(16);
+    text("No hay instructores disponibles para esta especialidad", inicioX, contentTop + 40);
+    botonVolverSesiones.dibujar();
+    dibujarPieSesiones();
     return;
   }
-  float y = height * 0.24f;
+  float y = contentTop + 40;
   int index = 0;
   for (Instructor inst : instructoresDisponibles) {
     if (index >= botonesInstructoresDisponibles.size()) {
-      botonesInstructoresDisponibles.add(new Boton(inicioX, y, 500, 42, 
-        inst.nombre + " | " + inst.cedula + " | Sesiones: " + 
+      botonesInstructoresDisponibles.add(new Boton(inicioX, y, 500, 42,
+        inst.nombre + " | " + inst.cedula + " | Sesiones: " +
         inst.sesionesRealizadas + "/" + ArchivoInstructores.MAX_SESIONES_MES,
         color(41, 128, 185), color(52, 152, 219)));
     } else {
       Boton b = botonesInstructoresDisponibles.get(index);
       b.x = inicioX;
       b.y = y;
-      b.label = inst.nombre + " | " + inst.cedula + " | Sesiones: " + 
+      b.label = inst.nombre + " | " + inst.cedula + " | Sesiones: " +
                    inst.sesionesRealizadas + "/" + ArchivoInstructores.MAX_SESIONES_MES;
       b.dibujar();
     }
@@ -639,23 +799,24 @@ void dibujarSeleccionInstructor() {
   while (botonesInstructoresDisponibles.size() > index) {
     botonesInstructoresDisponibles.remove(botonesInstructoresDisponibles.size() - 1);
   }
-  botonVolver.dibujar();
+  botonVolverSesiones.dibujar();
+  dibujarPieSesiones();
 }
 
 void dibujarFormularioConsultarSesion() {
-  dibujarEncabezado("Consultar Sesión");
-  float inicioX = centroX - 170;
-  campoCodigoSesion.x = inicioX; campoCodigoSesion.y = height * 0.28f;
+  float contentTop = dibujarEncabezadoSesionesSub("Consultar Sesión");
+  float inicioX = sidebarAncho + width * 0.022f;
+  campoCodigoSesion.x = inicioX; campoCodigoSesion.y = contentTop;
   campoCodigoSesion.dibujar();
-  botonBuscar.x = inicioX + 360; botonBuscar.y = height * 0.27f;
+  botonBuscar.x = inicioX + 360; botonBuscar.y = contentTop - 2;
   botonBuscar.w = 120; botonBuscar.h = 40;
   botonBuscar.dibujar();
-  botonVolver.dibujar();
+  botonVolverSesiones.dibujar();
   if (sesionEncontrada != null) {
     fill(20);
     textAlign(LEFT, TOP);
     textSize(16);
-    float y = height * 0.40f;
+    float y = contentTop + 70;
     text("Código: " + sesionEncontrada.codigoUnico, inicioX, y);
     text("Aprendiz: " + sesionEncontrada.nombreAprendiz, inicioX, y + 35);
     text("Cédula: " + sesionEncontrada.cedulaAprendiz, inicioX, y + 70);
@@ -663,31 +824,33 @@ void dibujarFormularioConsultarSesion() {
     text("Instructor: " + sesionEncontrada.cedulaInstructor, inicioX, y + 140);
     text("Fecha: " + sesionEncontrada.fechaSesion, inicioX, y + 175);
   }
+  dibujarPieSesiones();
 }
 
 void dibujarFormularioCancelarSesion() {
-  dibujarEncabezado("Cancelar Sesión");
-  float inicioX = centroX - 170;
-  fill(80);
+  float contentTop = dibujarEncabezadoSesionesSub("Cancelar Sesión");
+  float inicioX = sidebarAncho + width * 0.022f;
+  fill(COLOR_GRIS_DESC);
   textAlign(LEFT, TOP);
   textSize(14);
-  text("Ingresa el código de la sesión a cancelar (solo fechas futuras)", inicioX, height * 0.20f);
+  text("Ingresa el código de la sesión a cancelar (solo fechas futuras)", inicioX, contentTop);
   campoCodigoSesion.x = inicioX;
-  campoCodigoSesion.y = height * 0.28f;
+  campoCodigoSesion.y = contentTop + 30;
   campoCodigoSesion.dibujar();
   botonEliminar.x = inicioX;
-  botonEliminar.y = height * 0.40f;
+  botonEliminar.y = contentTop + 90;
   botonEliminar.label = "Cancelar Sesión";
   botonEliminar.dibujar();
-  botonVolver.dibujar();
+  botonVolverSesiones.dibujar();
+  dibujarPieSesiones();
 }
 
 void dibujarListadoSesiones() {
-  dibujarEncabezado("Sesiones Registradas");
-  botonVolver.dibujar();
+  float contentTop = dibujarEncabezadoSesionesSub("Sesiones Registradas");
+  botonVolverSesiones.dibujar();
   if (listaSesiones == null) listaSesiones = archivoSesiones.listarTodas();
-  float inicioX = width * 0.08f;
-  float y = height * 0.20f;
+  float inicioX = sidebarAncho + width * 0.022f;
+  float y = contentTop;
   fill(20);
   textAlign(LEFT, TOP);
   textSize(15);
@@ -707,9 +870,10 @@ void dibujarListadoSesiones() {
       text(ses.especialidad, inicioX + 330, y);
       text(ses.fechaSesion, inicioX + 480, y);
       y += 28;
-      if (y > height - 80) break;
+      if (y > height - 90) break;
     }
   }
+  dibujarPieSesiones();
 }
 
 // ================================================================
@@ -850,7 +1014,6 @@ void accionGuardarAprendiz() {
   }
 }
 
-// Convierte "Baile, Pintura,  Canto" en una lista limpia sin vacíos
 ArrayList<String> parsearEspecialidades(String texto) {
   ArrayList<String> resultado = new ArrayList<String>();
   String[] partes = texto.split(",");
@@ -1120,6 +1283,10 @@ void mostrarOpcionesReinicio() {
 // ================================================================
 
 void mousePressed() {
+  // La barra lateral tiene prioridad: si el clic cae ahí, se procesa
+  // la navegación y no se evalúa el contenido de la pantalla actual.
+  if (manejarClicSidebar()) return;
+
   switch (estado) {
     case MENU_PRINCIPAL:
       if (botonesMenuPrincipal.get(0).contieneClic(mouseX, mouseY)) {
@@ -1153,7 +1320,7 @@ void mousePressed() {
         estado = MENU_REPORTES; mensaje = "";
       }
       break;
-      
+
     case MENU_INSTRUCTORES:
       if (botonesMenuInstructores.get(0).contieneClic(mouseX, mouseY)) {
         estado = CREAR_INSTRUCTOR; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
@@ -1175,7 +1342,7 @@ void mousePressed() {
         estado = MENU_PRINCIPAL; limpiarDatosTemporales(); mensaje = "";
       }
       break;
-      
+
     case MENU_APRENDICES:
       if (botonesMenuAprendices.get(0).contieneClic(mouseX, mouseY)) {
         estado = CREAR_APRENDIZ; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
@@ -1197,8 +1364,9 @@ void mousePressed() {
         estado = MENU_PRINCIPAL; limpiarDatosTemporales(); mensaje = "";
       }
       break;
-      
+
     case MENU_SESIONES:
+      if (manejarClicSidebar()) break;
       if (botonesMenuSesiones.get(0).contieneClic(mouseX, mouseY)) {
         estado = ASIGNAR_SESION; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
         botonBuscar.label = "Verificar";
@@ -1213,7 +1381,7 @@ void mousePressed() {
         estado = MENU_PRINCIPAL; limpiarDatosTemporales(); mensaje = "";
       }
       break;
-      
+
     case CREAR_INSTRUCTOR:
       activarCampoSiClic(campoCedula);
       activarCampoSiClic(campoNombre);
@@ -1225,7 +1393,7 @@ void mousePressed() {
         estado = MENU_INSTRUCTORES; limpiarCamposFormulario(); mensaje = "";
       }
       break;
-      
+
     case CONSULTAR_INSTRUCTOR:
       activarCampoSiClic(campoCedula);
       if (botonBuscar.contieneClic(mouseX, mouseY)) {
@@ -1234,7 +1402,7 @@ void mousePressed() {
         estado = MENU_INSTRUCTORES; limpiarCamposFormulario(); instructorEncontrado = null; mensaje = "";
       }
       break;
-      
+
     case ACTUALIZAR_INSTRUCTOR:
       activarCampoSiClic(campoCedula);
       activarCampoSiClic(campoNombre);
@@ -1248,7 +1416,7 @@ void mousePressed() {
         estado = MENU_INSTRUCTORES; limpiarCamposFormulario(); mensaje = "";
       }
       break;
-      
+
     case ELIMINAR_INSTRUCTOR:
       activarCampoSiClic(campoCedula);
       if (botonEliminar.contieneClic(mouseX, mouseY)) {
@@ -1257,13 +1425,13 @@ void mousePressed() {
         estado = MENU_INSTRUCTORES; limpiarCamposFormulario(); mensaje = "";
       }
       break;
-      
+
     case LISTAR_INSTRUCTORES:
       if (botonVolver.contieneClic(mouseX, mouseY)) {
         estado = MENU_INSTRUCTORES; listaInstructores = null; mensaje = "";
       }
       break;
-      
+
     case CREAR_APRENDIZ:
       activarCampoSiClic(campoCedulaAprendiz);
       activarCampoSiClic(campoNombreAprendiz);
@@ -1274,7 +1442,7 @@ void mousePressed() {
         estado = MENU_APRENDICES; limpiarCamposFormulario(); mensaje = "";
       }
       break;
-      
+
     case CONSULTAR_APRENDIZ:
       activarCampoSiClic(campoCedulaAprendiz);
       if (botonBuscar.contieneClic(mouseX, mouseY)) {
@@ -1283,7 +1451,7 @@ void mousePressed() {
         estado = MENU_APRENDICES; limpiarCamposFormulario(); aprendizEncontrado = null; mensaje = "";
       }
       break;
-      
+
     case ACTUALIZAR_APRENDIZ:
       activarCampoSiClic(campoCedulaAprendiz);
       activarCampoSiClic(campoNombreAprendiz);
@@ -1296,7 +1464,7 @@ void mousePressed() {
         estado = MENU_APRENDICES; limpiarCamposFormulario(); mensaje = "";
       }
       break;
-      
+
     case ELIMINAR_APRENDIZ:
       activarCampoSiClic(campoCedulaAprendiz);
       if (botonEliminar.contieneClic(mouseX, mouseY)) {
@@ -1305,26 +1473,28 @@ void mousePressed() {
         estado = MENU_APRENDICES; limpiarCamposFormulario(); mensaje = "";
       }
       break;
-      
+
     case LISTAR_APRENDICES:
       if (botonVolver.contieneClic(mouseX, mouseY)) {
         estado = MENU_APRENDICES; listaAprendices = null; mensaje = "";
       }
       break;
-      
+
     case ASIGNAR_SESION:
+      if (manejarClicSidebar()) break;
       activarCampoSiClic(campoCedulaAprendiz);
       activarCampoSiClic(campoEspecialidadSesion);
       if (botonBuscar.contieneClic(mouseX, mouseY)) {
         accionVerificarAprendiz();
       } else if (botonAsignar.contieneClic(mouseX, mouseY) && aprendizEncontrado != null) {
         accionBuscarInstructoresDisponibles();
-      } else if (botonVolver.contieneClic(mouseX, mouseY)) {
+      } else if (botonVolverSesiones.contieneClic(mouseX, mouseY)) {
         estado = MENU_SESIONES; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
       }
       break;
-      
+
     case SELECCIONAR_INSTRUCTOR_SESION:
+      if (manejarClicSidebar()) break;
       for (int i = 0; i < botonesInstructoresDisponibles.size(); i++) {
         if (botonesInstructoresDisponibles.get(i).contieneClic(mouseX, mouseY)) {
           instructorSeleccionadoIndex = i;
@@ -1332,31 +1502,34 @@ void mousePressed() {
           break;
         }
       }
-      if (botonVolver.contieneClic(mouseX, mouseY)) {
+      if (botonVolverSesiones.contieneClic(mouseX, mouseY)) {
         estado = ASIGNAR_SESION; mensaje = "";
       }
       break;
-      
+
     case CONSULTAR_SESION:
+      if (manejarClicSidebar()) break;
       activarCampoSiClic(campoCodigoSesion);
       if (botonBuscar.contieneClic(mouseX, mouseY)) {
         accionBuscarSesion();
-      } else if (botonVolver.contieneClic(mouseX, mouseY)) {
+      } else if (botonVolverSesiones.contieneClic(mouseX, mouseY)) {
         estado = MENU_SESIONES; limpiarCamposFormulario(); sesionEncontrada = null; mensaje = "";
       }
       break;
-      
+
     case CANCELAR_SESION:
+      if (manejarClicSidebar()) break;
       activarCampoSiClic(campoCodigoSesion);
       if (botonEliminar.contieneClic(mouseX, mouseY)) {
         accionCancelarSesion();
-      } else if (botonVolver.contieneClic(mouseX, mouseY)) {
+      } else if (botonVolverSesiones.contieneClic(mouseX, mouseY)) {
         estado = MENU_SESIONES; limpiarCamposFormulario(); mensaje = "";
       }
       break;
-      
+
     case LISTAR_SESIONES:
-      if (botonVolver.contieneClic(mouseX, mouseY)) {
+      if (manejarClicSidebar()) break;
+      if (botonVolverSesiones.contieneClic(mouseX, mouseY)) {
         estado = MENU_SESIONES; listaSesiones = null; mensaje = "";
       }
       break;
@@ -1368,9 +1541,6 @@ void mousePressed() {
 // ================================================================
 
 void keyPressed() {
-  // Solo se envían las teclas a los campos que realmente están
-  // visibles en la pantalla actual, en vez de actualizar los diez
-  // campos del sistema en cada pulsación.
   switch (estado) {
     case CREAR_INSTRUCTOR:
     case ACTUALIZAR_INSTRUCTOR:
@@ -1409,7 +1579,6 @@ void keyPressed() {
       break;
 
     default:
-      // Ningún campo de texto visible en este estado: no se hace nada.
       break;
   }
 }
