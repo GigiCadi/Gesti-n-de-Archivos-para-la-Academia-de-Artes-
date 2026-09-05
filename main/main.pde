@@ -1,7 +1,13 @@
 // ================================================================
 // LABORATORIO 1 - Manejo de Archivos en Java (Processing)
 // Academia de Artes Barranquilla - SISTEMA COMPLETO
-// Rediseño de interfaz: barra lateral + panel de módulos
+//
+// main.pde  ->  estados, datos, eventos y composición de pantallas
+// UI.pde    ->  sistema de diseño (paleta, tipografía, componentes)
+//
+// La lógica de negocio (validaciones, archivos, contadores) es la
+// misma de la versión anterior. Sólo cambió la capa visual y la
+// configuración de render.
 // ================================================================
 
 import java.io.RandomAccessFile;
@@ -41,17 +47,12 @@ final int SELECCIONAR_INSTRUCTOR_SESION = 34;
 
 int estado = MENU_PRINCIPAL;
 
-// ---- Barra lateral ----
-final float SIDEBAR_WIDTH = 230;
-float contentX, contentW;
-ArrayList<ItemNav> itemsNav;
-
 // ---- Archivos ----
 ArchivoInstructores archivoInstructores;
 ArchivoAprendices archivoAprendices;
 ArchivoSesiones archivoSesiones;
 
-// ---- Botones principales ----
+// ---- Botones ----
 ArrayList<Boton> botonesMenuPrincipal;
 ArrayList<Boton> botonesMenuInstructores;
 ArrayList<Boton> botonesMenuAprendices;
@@ -59,9 +60,9 @@ ArrayList<Boton> botonesMenuSesiones;
 ArrayList<Boton> botonesMenuReportes;
 ArrayList<Boton> botonesInstructoresDisponibles;
 
-// ---- Botones de acción ----
 Boton botonGuardar, botonBuscar, botonEliminar, botonVolver, botonCancelar;
 Boton botonAsignar;
+Boton botonVolverSesiones;
 
 // ---- Campos de formulario ----
 CampoTexto campoCedula, campoNombre, campoEspecialidad, campoTelefono;
@@ -86,25 +87,39 @@ String especialidadSeleccionada = "";
 String fechaSesionSeleccionada = "";
 int instructorSeleccionadoIndex = -1;
 
-// ---- Variables para posicionamiento dinámico ----
-float centroX, centroY;
-
-// ---- Layout tipo "panel/dashboard" para el módulo de Sesiones ----
-float sidebarAncho = 230;
-float topBarAlto = 64;
-float heroAlto = 230;
-float breadcrumbAlto = 46;
+// ---- Imágenes de cabecera (opcionales: si no existen, el hero se
+//      genera por código y así nunca se ve una imagen ampliada) ----
+PImage imgEncabezadoInicio;
 PImage imgEncabezadoSesiones;
-Boton botonVolverSesiones;
+PImage imgEncabezadoInstructores;
+PImage imgEncabezadoAprendices;
+PImage imgEncabezadoReportes;
 
-// ---- DECLARACIÓN ÚNICA DE botonesSidebar ----
-ArrayList<Boton> botonesSidebar = new ArrayList<Boton>();
+// ---- Estadísticas del inicio (con caché para no leer los archivos
+//      en cada cuadro) ----
+int statInstructores = 0, statInstDisponibles = 0;
+int statAprendices = 0, statAprConCupo = 0, statSesiones = 0;
+int ultimoRefrescoStats = -99999;
+
 
 // ================================================================
-// SETUP: Inicialización del sistema
+// SETTINGS: configuración de render
+//
+// Aquí estaba la causa del pixelado:
+//   - noSmooth() apagaba el antialiasing de TODO el sketch.
+//   - pixelDensity(1) forzaba 1x incluso en pantallas HiDPI.
+// Ahora se activa el suavizado y se usa la densidad real del monitor.
+// ================================================================
+void settings() {
+  size(1440, 900);
+  pixelDensity(displayDensity());
+  smooth();
+}
+
+// ================================================================
+// SETUP
 // ================================================================
 void setup() {
-  size(1280, 720);
   surface.setTitle("Academia de Artes Barranquilla - Sistema de Gestión");
   surface.setResizable(true);
 
@@ -114,183 +129,207 @@ void setup() {
     frame.setVisible(true);
     frame.requestFocus();
   } catch (Exception e) {
-    surface.setSize(displayWidth, displayHeight);
-    println("Nota: No se pudo maximizar automáticamente.");
+    println("Nota: no se pudo maximizar automáticamente.");
   }
 
-  pixelDensity(1);
-  noSmooth();
+  // Fuentes reales y suavizadas (sustituyen a la fuente bitmap
+  // por defecto, que Processing escalaba y se veía dentada).
+  inicializarTipografia();
 
-  centroX = width / 2;
-  centroY = height / 2;
-  contentX = SIDEBAR_WIDTH;
-  contentW = width - SIDEBAR_WIDTH;
-
-  sidebarAncho = max(width * 0.145f, 205);
-  topBarAlto = max(height * 0.058f, 52);
-  heroAlto = height * 0.26f;
-  breadcrumbAlto = max(height * 0.042f, 36);
-
-  // Cambia el nombre de tu imagen aquí si es diferente
-  imgEncabezadoSesiones = loadImage("header_sesiones.jpeg");
+  recalcularLayout();
+  cargarImagenesCabecera();
 
   archivoInstructores = new ArchivoInstructores(sketchPath("data/instructores.dat"));
-  archivoAprendices = new ArchivoAprendices(sketchPath("data/aprendices.dat"));
-  archivoSesiones = new ArchivoSesiones(sketchPath("data/sesiones.dat"));
+  archivoAprendices   = new ArchivoAprendices(sketchPath("data/aprendices.dat"));
+  archivoSesiones     = new ArchivoSesiones(sketchPath("data/sesiones.dat"));
 
-  if (!archivoInstructores.abrir()) {
-    mensaje = "Error: No se pudo abrir el archivo de instructores.";
-    colorMensaje = color(200, 40, 40);
-  }
-  if (!archivoAprendices.abrir()) {
-    mensaje = "Error: No se pudo abrir el archivo de aprendices.";
-    colorMensaje = color(200, 40, 40);
-  }
-  if (!archivoSesiones.abrir()) {
-    mensaje = "Error: No se pudo abrir el archivo de sesiones.";
-    colorMensaje = color(200, 40, 40);
-  }
+  if (!archivoInstructores.abrir()) mostrarMensaje("No se pudo abrir el archivo de instructores.", true);
+  if (!archivoAprendices.abrir())   mostrarMensaje("No se pudo abrir el archivo de aprendices.", true);
+  if (!archivoSesiones.abrir())     mostrarMensaje("No se pudo abrir el archivo de sesiones.", true);
 
   inicializarBotones();
   inicializarCampos();
-  inicializarSidebar();
 }
+
+// Carga una imagen sólo si el archivo existe, probando extensiones
+// comunes. Evita los errores en consola y el hero queda procedural.
+PImage cargarImagenOpcional(String base) {
+  String[] ext = {".jpg", ".jpeg", ".png"};
+  for (int i = 0; i < ext.length; i++) {
+    File f = new File(dataPath(base + ext[i]));
+    if (f.exists()) return loadImage(base + ext[i]);
+  }
+  return null;
+}
+
+void cargarImagenesCabecera() {
+  imgEncabezadoInicio       = cargarImagenOpcional("header_inicio");
+  imgEncabezadoSesiones     = cargarImagenOpcional("header_sesiones");
+  imgEncabezadoInstructores = cargarImagenOpcional("header_instructores");
+  imgEncabezadoAprendices   = cargarImagenOpcional("header_aprendices");
+  imgEncabezadoReportes     = cargarImagenOpcional("header_reportes");
+}
+
 
 // ================================================================
 // INICIALIZACIÓN DE COMPONENTES
+// La geometría se asigna después, en cada cuadro, para que la
+// interfaz se adapte al tamaño real de la ventana.
 // ================================================================
 
-void inicializarSidebar() {
-  itemsNav = new ArrayList<ItemNav>();
-  itemsNav.add(new ItemNav("home",         "Inicio",        MENU_PRINCIPAL));
-  itemsNav.add(new ItemNav("instructores", "Instructores",  MENU_INSTRUCTORES));
-  itemsNav.add(new ItemNav("aprendices",   "Aprendices",    MENU_APRENDICES));
-  itemsNav.add(new ItemNav("sesiones",     "Sesiones",      MENU_SESIONES));
-  itemsNav.add(new ItemNav("reportes",     "Reportes",      MENU_REPORTES));
-  itemsNav.add(new ItemNav("reinicio",     "Reinicio",      -1));
-  itemsNav.add(new ItemNav("salir",        "Salir",         -2));
-}
-
 void inicializarBotones() {
-  // El menú principal (tarjetas de módulos) ahora se construye
-  // dinámicamente cada cuadro en dibujarMenuPrincipal()
+  // ---- MENÚ PRINCIPAL (5 módulos) ----
   botonesMenuPrincipal = new ArrayList<Boton>();
+  botonesMenuPrincipal.add(new Boton(0, 0, 10, 10, "Módulo de Sesiones",
+    "Asigna, consulta, cancela y lista las sesiones del mes.",
+    "calendario", C_AZUL_BG, C_AZUL, C_AZUL));
+  botonesMenuPrincipal.add(new Boton(0, 0, 10, 10, "Módulo de Instructores",
+    "Crea, consulta, actualiza y elimina instructores.",
+    "personas", C_VERDE_BG, C_VERDE, C_VERDE));
+  botonesMenuPrincipal.add(new Boton(0, 0, 10, 10, "Módulo de Aprendices",
+    "Gestiona los aprendices y sus especialidades.",
+    "gorro", C_MORADO_BG, C_MORADO, C_MORADO));
+  botonesMenuPrincipal.add(new Boton(0, 0, 10, 10, "Reportes y Reinicio",
+    "Consulta disponibilidad y reinicia los contadores.",
+    "grafico", C_AMBAR_BG, C_AMBAR, C_AMBAR));
+  botonesMenuPrincipal.add(new Boton(0, 0, 10, 10, "Salir del Sistema",
+    "Guarda los cambios y cierra la aplicación.",
+    "salir", C_ROJO_BG, C_ROJO, C_ROJO));
 
-  // ---- MENÚ DE INSTRUCTORES ----
+  // ---- MENÚ DE INSTRUCTORES (7 acciones) ----
   botonesMenuInstructores = new ArrayList<Boton>();
-  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.22f, 300, 48, "Crear instructor", color(30, 120, 220), color(52, 152, 219)));
-  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.30f, 300, 48, "Consultar instructor", color(30, 120, 220), color(52, 152, 219)));
-  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.38f, 300, 48, "Actualizar instructor", color(30, 120, 220), color(52, 152, 219)));
-  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.46f, 300, 48, "Eliminar instructor", color(200, 50, 50), color(231, 76, 60)));
-  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.54f, 300, 48, "Listar instructores", color(30, 120, 220), color(52, 152, 219)));
-  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.62f, 300, 48, "Reiniciar sesiones del mes", color(220, 160, 30), color(241, 196, 15)));
-  botonesMenuInstructores.add(new Boton(centroX - 150, height * 0.72f, 300, 42, "← Volver", color(149, 165, 166), color(189, 195, 199)));
+  botonesMenuInstructores.add(new Boton(0, 0, 10, 10, "Crear Instructor",
+    "Registra un nuevo instructor en la academia.",
+    "persona-mas", C_AZUL_BG, C_AZUL, C_AZUL));
+  botonesMenuInstructores.add(new Boton(0, 0, 10, 10, "Consultar Instructor",
+    "Busca la información de un instructor por su cédula.",
+    "buscar", C_VERDE_BG, C_VERDE, C_VERDE));
+  botonesMenuInstructores.add(new Boton(0, 0, 10, 10, "Actualizar Instructor",
+    "Modifica nombre, especialidad o teléfono.",
+    "lapiz", C_NARANJA_BG, C_NARANJA, C_NARANJA));
+  botonesMenuInstructores.add(new Boton(0, 0, 10, 10, "Eliminar Instructor",
+    "Elimina un instructor del sistema.",
+    "basura", C_ROJO_BG, C_ROJO, C_ROJO));
+  botonesMenuInstructores.add(new Boton(0, 0, 10, 10, "Listar Instructores",
+    "Visualiza todos los instructores y sus sesiones.",
+    "lista", C_MORADO_BG, C_MORADO, C_MORADO));
+  botonesMenuInstructores.add(new Boton(0, 0, 10, 10, "Reiniciar Sesiones del Mes",
+    "Pone en cero el contador de todos los instructores.",
+    "refrescar", C_AMBAR_BG, C_AMBAR, C_AMBAR));
+  botonesMenuInstructores.add(new Boton(0, 0, 10, 10, "Volver",
+    "Regresa al menú principal.",
+    "flecha-izq", C_GRIS_BG, C_GRIS, color(70, 80, 96)));
 
-  // ---- MENÚ DE APRENDICES ----
+  // ---- MENÚ DE APRENDICES (7 acciones) ----
   botonesMenuAprendices = new ArrayList<Boton>();
-  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.22f, 300, 48, "Crear aprendiz", color(150, 70, 200), color(169, 105, 197)));
-  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.30f, 300, 48, "Consultar aprendiz", color(150, 70, 200), color(169, 105, 197)));
-  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.38f, 300, 48, "Actualizar aprendiz", color(150, 70, 200), color(169, 105, 197)));
-  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.46f, 300, 48, "Eliminar aprendiz", color(200, 50, 50), color(231, 76, 60)));
-  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.54f, 300, 48, "Listar aprendices", color(150, 70, 200), color(169, 105, 197)));
-  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.62f, 300, 48, "Reiniciar sesiones del mes", color(220, 160, 30), color(241, 196, 15)));
-  botonesMenuAprendices.add(new Boton(centroX - 150, height * 0.72f, 300, 42, "← Volver", color(149, 165, 166), color(189, 195, 199)));
+  botonesMenuAprendices.add(new Boton(0, 0, 10, 10, "Crear Aprendiz",
+    "Registra un nuevo aprendiz en la academia.",
+    "persona-mas", C_AZUL_BG, C_AZUL, C_AZUL));
+  botonesMenuAprendices.add(new Boton(0, 0, 10, 10, "Consultar Aprendiz",
+    "Busca la información de un aprendiz por su cédula.",
+    "buscar", C_VERDE_BG, C_VERDE, C_VERDE));
+  botonesMenuAprendices.add(new Boton(0, 0, 10, 10, "Actualizar Aprendiz",
+    "Modifica el nombre o las especialidades.",
+    "lapiz", C_NARANJA_BG, C_NARANJA, C_NARANJA));
+  botonesMenuAprendices.add(new Boton(0, 0, 10, 10, "Eliminar Aprendiz",
+    "Elimina un aprendiz del sistema.",
+    "basura", C_ROJO_BG, C_ROJO, C_ROJO));
+  botonesMenuAprendices.add(new Boton(0, 0, 10, 10, "Listar Aprendices",
+    "Visualiza todos los aprendices y sus sesiones.",
+    "lista", C_MORADO_BG, C_MORADO, C_MORADO));
+  botonesMenuAprendices.add(new Boton(0, 0, 10, 10, "Reiniciar Sesiones del Mes",
+    "Pone en cero el contador de todos los aprendices.",
+    "refrescar", C_AMBAR_BG, C_AMBAR, C_AMBAR));
+  botonesMenuAprendices.add(new Boton(0, 0, 10, 10, "Volver",
+    "Regresa al menú principal.",
+    "flecha-izq", C_GRIS_BG, C_GRIS, color(70, 80, 96)));
 
-  // ---- MENÚ DE SESIONES (ESTILO NUEVO CON TARJETAS) ----
+  // ---- MENÚ DE SESIONES (4 tarjetas + Volver) ----
   botonesMenuSesiones = new ArrayList<Boton>();
+  botonesMenuSesiones.add(new Boton(0, 0, 10, 10, "Asignar Nueva Sesión",
+    "Registra una nueva sesión de clase siguiendo el proceso guiado.",
+    "calendario-mas", C_AZUL_BG, C_AZUL, C_AZUL));
+  botonesMenuSesiones.add(new Boton(0, 0, 10, 10, "Consultar Sesión por Código",
+    "Busca la información de una sesión usando su código único.",
+    "buscar", C_VERDE_BG, C_VERDE, C_VERDE));
+  botonesMenuSesiones.add(new Boton(0, 0, 10, 10, "Cancelar Sesión",
+    "Cancela una sesión programada (sólo si es con fecha futura).",
+    "calendario-x", C_NARANJA_BG, C_NARANJA, C_NARANJA));
+  botonesMenuSesiones.add(new Boton(0, 0, 10, 10, "Listar Sesiones del Mes",
+    "Visualiza todas las sesiones programadas actualmente.",
+    "lista", C_MORADO_BG, C_MORADO, C_MORADO));
+  // Índice 4: se conserva la posición para no alterar mousePressed,
+  // pero se dibuja como botón de contorno, igual que en la referencia.
+  Boton volverSes = new Boton(0, 0, 130, 42, "Volver", color(255), color(248));
+  volverSes.variante = BTN_FANTASMA;
+  volverSes.icono = "flecha-izq";
+  botonesMenuSesiones.add(volverSes);
 
-  float contX = sidebarAncho + width * 0.022f;
-  float contW = width - sidebarAncho - width * 0.044f;
-  float gap = width * 0.011f;
-  float cardW = (contW - gap * 3) / 4.0f;
-  float cardH = height * 0.175f;
-  float fila1Y = topBarAlto + heroAlto + breadcrumbAlto + height * 0.115f;
-  float fila2Y = fila1Y + cardH + height * 0.022f;
-
-  color azulClaro   = color(214, 234, 255);
-  color azulTexto   = color(26, 115, 232);
-  color verdeClaro  = color(215, 245, 227);
-  color verdeTexto  = color(39, 174, 96);
-  color rojoClaro   = color(255, 219, 216);
-  color rojoTexto   = color(192, 57, 43);
-  color moradoClaro = color(233, 217, 245);
-  color moradoTexto = color(142, 68, 173);
-  color grisClaro   = color(225, 227, 230);
-  color grisTexto   = color(120, 128, 138);
-
-  // CORREGIDO: Cada botón ahora usa el constructor correcto con 3 colores
-  botonesMenuSesiones.add(new Boton(contX, fila1Y, cardW, cardH,
-    "Asignar Sesión", "Agenda una nueva sesión para un aprendiz.",
-    "calendario", azulClaro, azulTexto, azulTexto));
-    
-  botonesMenuSesiones.add(new Boton(contX + (cardW + gap), fila1Y, cardW, cardH,
-    "Consultar Sesión", "Busca la información de una sesión por su código.",
-    "buscar", verdeClaro, verdeTexto, verdeTexto));
-    
-  botonesMenuSesiones.add(new Boton(contX + 2 * (cardW + gap), fila1Y, cardW, cardH,
-    "Cancelar Sesión", "Cancela una sesión programada a futuro.",
-    "cancelar", rojoClaro, rojoTexto, rojoTexto));
-    
-  botonesMenuSesiones.add(new Boton(contX + 3 * (cardW + gap), fila1Y, cardW, cardH,
-    "Listar Sesiones", "Visualiza todas las sesiones registradas.",
-    "lista", moradoClaro, moradoTexto, moradoTexto));
-    
-  botonesMenuSesiones.add(new Boton(contX, fila2Y, cardW, cardH,
-    "Volver", "Regresa al menú principal.",
-    "volver", grisClaro, grisTexto, grisTexto));
-
-  // ---- MENÚ DE REPORTES Y REINICIO ----
+  // ---- MENÚ DE REPORTES (3 tarjetas) ----
   botonesMenuReportes = new ArrayList<Boton>();
-  botonesMenuReportes.add(new Boton(centroX - 175, height * 0.30f, 350, 55, "Ver reporte de disponibilidad", color(30, 120, 220), color(52, 152, 219)));
-  botonesMenuReportes.add(new Boton(centroX - 175, height * 0.42f, 350, 55, "Reiniciar contadores del mes", color(220, 160, 30), color(241, 196, 15)));
-  botonesMenuReportes.add(new Boton(centroX - 175, height * 0.54f, 350, 42, "← Volver", color(149, 165, 166), color(189, 195, 199)));
+  botonesMenuReportes.add(new Boton(0, 0, 10, 10, "Reporte de Disponibilidad",
+    "Consulta los instructores con cupo y los aprendices con especialidades disponibles.",
+    "grafico", C_MORADO_BG, C_MORADO, C_MORADO));
+  botonesMenuReportes.add(new Boton(0, 0, 10, 10, "Reiniciar Contadores del Mes",
+    "Reinicia el contador de sesiones de instructores y aprendices a 0.",
+    "refrescar", C_AMBAR_BG, C_AMBAR, C_AMBAR));
+  botonesMenuReportes.add(new Boton(0, 0, 10, 10, "Volver",
+    "Regresa al menú principal.",
+    "flecha-izq", C_GRIS_BG, C_GRIS, color(70, 80, 96)));
 
   // ---- BOTONES DE ACCIÓN ----
-  float yBase = height * 0.78f;
-  botonGuardar  = new Boton(centroX - 80, yBase, 160, 45, "Guardar", color(40, 180, 100), color(46, 204, 113));
-  botonBuscar   = new Boton(centroX + 170, height * 0.28f, 120, 40, "Buscar", color(30, 120, 220), color(52, 152, 219));
-  botonEliminar = new Boton(centroX - 80, height * 0.40f, 160, 45, "Eliminar", color(200, 50, 50), color(231, 76, 60));
-  botonCancelar = new Boton(centroX + 100, yBase, 160, 45, "Cancelar", color(149, 165, 166), color(189, 195, 199));
-  botonVolver   = new Boton(width * 0.04f, height * 0.88f, 130, 42, "← Volver", color(149, 165, 166), color(189, 195, 199));
-  botonAsignar  = new Boton(centroX - 100, yBase, 200, 45, "Asignar Sesión", color(30, 120, 220), color(52, 152, 219));
-  botonVolverSesiones = new Boton(sidebarAncho + width * 0.022f, height - 96, 130, 42,
-    "← Volver", color(149, 165, 166), color(189, 195, 199));
+  botonGuardar  = new Boton(0, 0, 170, 46, "Guardar", C_VERDE, C_VERDE);
+  botonGuardar.variante = BTN_EXITO;
+  botonGuardar.icono = "guardar";
+
+  botonBuscar   = new Boton(0, 0, 130, 46, "Buscar", C_AZUL, C_AZUL);
+  botonBuscar.variante = BTN_PRIMARIO;
+  botonBuscar.icono = "buscar";
+
+  botonEliminar = new Boton(0, 0, 180, 46, "Eliminar", C_ROJO, C_ROJO);
+  botonEliminar.variante = BTN_PELIGRO;
+  botonEliminar.icono = "basura";
+
+  botonCancelar = new Boton(0, 0, 140, 46, "Cancelar", color(255), color(248));
+  botonCancelar.variante = BTN_FANTASMA;
+
+  botonVolver   = new Boton(0, 0, 130, 42, "Volver", color(255), color(248));
+  botonVolver.variante = BTN_FANTASMA;
+  botonVolver.icono = "flecha-izq";
+
+  botonAsignar  = new Boton(0, 0, 210, 46, "Asignar Sesión", C_AZUL, C_AZUL);
+  botonAsignar.variante = BTN_PRIMARIO;
+  botonAsignar.icono = "calendario-mas";
+
+  botonVolverSesiones = new Boton(0, 0, 130, 42, "Volver", color(255), color(248));
+  botonVolverSesiones.variante = BTN_FANTASMA;
+  botonVolverSesiones.icono = "flecha-izq";
 
   botonesInstructoresDisponibles = new ArrayList<Boton>();
 }
 
 void inicializarCampos() {
-  float anchoCampo = 340;
-  float inicioX = centroX - anchoCampo/2;
+  campoCedula       = new CampoTexto(0, 0, 340, 44, "Cédula");
+  campoNombre       = new CampoTexto(0, 0, 340, 44, "Nombre");
+  campoEspecialidad = new CampoTexto(0, 0, 340, 44, "Especialidad");
+  campoTelefono     = new CampoTexto(0, 0, 340, 44, "Teléfono");
 
-  campoCedula       = new CampoTexto(inicioX, height * 0.28f, anchoCampo, 38, "Cédula");
-  campoNombre       = new CampoTexto(inicioX, height * 0.38f, anchoCampo, 38, "Nombre");
-  campoEspecialidad = new CampoTexto(inicioX, height * 0.48f, anchoCampo, 38, "Especialidad");
-  campoTelefono     = new CampoTexto(inicioX, height * 0.58f, anchoCampo, 38, "Teléfono");
+  campoCedulaAprendiz       = new CampoTexto(0, 0, 340, 44, "Cédula");
+  campoNombreAprendiz       = new CampoTexto(0, 0, 340, 44, "Nombre");
+  campoEspecialidadAprendiz = new CampoTexto(0, 0, 340, 44, "Especialidades (separadas por coma)");
 
-  campoCedulaAprendiz       = new CampoTexto(inicioX, height * 0.28f, anchoCampo, 38, "Cédula");
-  campoNombreAprendiz       = new CampoTexto(inicioX, height * 0.38f, anchoCampo, 38, "Nombre");
-  campoEspecialidadAprendiz = new CampoTexto(inicioX, height * 0.48f, anchoCampo, 38, "Especialidades (separadas por coma)");
-
-  campoCodigoSesion = new CampoTexto(inicioX, height * 0.28f, anchoCampo, 38, "Código de sesión");
-  campoFechaSesion  = new CampoTexto(inicioX, height * 0.38f, anchoCampo, 38, "Fecha (AAAA-MM-DD)");
-  campoEspecialidadSesion = new CampoTexto(inicioX, height * 0.52f, anchoCampo, 38, "Especialidad");
+  campoCodigoSesion       = new CampoTexto(0, 0, 340, 44, "Código de sesión");
+  campoFechaSesion        = new CampoTexto(0, 0, 340, 44, "Fecha (AAAA-MM-DD)");
+  campoEspecialidadSesion = new CampoTexto(0, 0, 340, 44, "Especialidad");
 }
 
+
 // ================================================================
-// DRAW: Bucle principal de dibujo
+// DRAW
 // ================================================================
 void draw() {
-  contentX = SIDEBAR_WIDTH;
-  contentW = width - SIDEBAR_WIDTH;
-  centroX = contentX + contentW / 2;
-  centroY = height / 2;
-
-  // Estos botones se reposicionan cada cuadro
-  botonVolver.x = contentX + contentW * 0.04f;
-  botonVolver.y = height * 0.88f;
-
-  background(240, 245, 250);
+  recalcularLayout();
+  actualizarAnimaciones();
 
   switch (estado) {
     case MENU_PRINCIPAL:        dibujarMenuPrincipal(); break;
@@ -317,154 +356,259 @@ void draw() {
     default: break;
   }
 
-  // La barra lateral se dibuja al final
-  dibujarSidebar();
-
+  dibujarVeloTransicion();
   dibujarMensaje();
 }
 
+
 // ================================================================
-// FUNCIONES DE DIBUJO PARA CADA PANTALLA
+// TEXTOS DE CABECERA POR MÓDULO
 // ================================================================
 
-// ---- MENÚ PRINCIPAL ----
+String[] descInicio = {
+  "Plataforma de gestión académica de la Academia de Artes Barranquilla.",
+  "Administra sesiones, instructores, aprendices y reportes del mes." };
+String[] citaInicio = { "\u201CEl arte", "siempre encuentra", "un lugar\u201D" };
+String[] palInicio  = { "CREAR", "ENSEÑAR", "CRECER" };
+
+String[] descSesiones = {
+  "Gestiona las sesiones de clases de la academia.",
+  "Asigna, consulta, cancela y visualiza las sesiones del mes." };
+String[] citaSesiones = { "\u201CCada sesión", "es una nueva historia", "por crear\u201D" };
+String[] palSesiones  = { "AGENDAR", "ENSEÑAR", "PRACTICAR", "CRECER" };
+
+String[] descInstructores = {
+  "Gestiona la información de los instructores que",
+  "hacen posible el arte en nuestra academia." };
+String[] citaInstructores = { "\u201CGrandes obras", "nacen de", "grandes maestros\u201D" };
+String[] palInstructores  = { "FORMAR", "INSPIRAR", "TRASCENDER" };
+
+String[] descAprendices = {
+  "Acompañamos el talento que transforma. Gestiona la información",
+  "de los aprendices y su participación en nuestra academia." };
+String[] citaAprendices = { "\u201CAquí también", "nacen grandes", "historias\u201D" };
+String[] palAprendices  = { "APRENDER", "CREAR", "COMPARTIR" };
+
+String[] descReportes = {
+  "Información que impulsa el arte. Genera reportes y consulta",
+  "la disponibilidad de nuestra comunidad artística." };
+String[] citaReportes = { "\u201CLos datos también", "cuentan historias\u201D" };
+String[] palReportes  = { "CULTURA", "GESTIÓN", "COMUNIDAD" };
+
+
+// ================================================================
+// PANTALLA: MENÚ PRINCIPAL
+// ================================================================
 void dibujarMenuPrincipal() {
-  // ---- Banner tipo "hero" con el nombre de la academia ----
-  float heroH = constrain(height * 0.32f, 200, 300);
+  float y = dibujarPantallaModulo(imgEncabezadoInicio, C_ORO,
+              "SISTEMA DE GESTIÓN", "ACADEMIA DE ARTES",
+              descInicio, citaInicio, palInicio, "Inicio");
 
-  noStroke();
-  fill(28, 34, 58);
-  rect(contentX, 0, contentW, heroH);
+  float x = panelX + margenH;
+  float w = panelW - margenH * 2;
 
-  // Franja decorativa dorada al pie del banner
-  fill(230, 180, 60);
-  rect(contentX, heroH - 3, contentW, 3);
+  dibujarTituloModulo(x, y, "Módulos del Sistema", "SELECCIONA UNA OPCIÓN", null, null);
+  y += 74;
 
-  fill(230, 180, 60);
-  textAlign(CENTER, CENTER);
-  textSize(15);
-  text("A C A D E M I A   D E   A R T E S", contentX + contentW/2, heroH * 0.34f);
+  float fondoY = panelY + panelH - margenV;
+  float disponible = fondoY - y;
 
-  fill(255);
-  textSize(44);
-  text("BARRANQUILLA", contentX + contentW/2, heroH * 0.55f);
-
-  fill(255, 255, 255, 220);
-  textSize(15);
-  text("S I S T E M A   D E   G E S T I Ó N", contentX + contentW/2, heroH * 0.75f);
-
-  stroke(230, 180, 60);
-  strokeWeight(2);
-  line(contentX + contentW/2 - 60, heroH * 0.86f, contentX + contentW/2 + 60, heroH * 0.86f);
-  noStroke();
-
-  // ---- Título "MÓDULOS DEL SISTEMA" ----
-  float yTitulo = heroH + 40;
-  fill(COLOR_TEXTO);
-  textAlign(CENTER, TOP);
-  textSize(24);
-  text("MÓDULOS DEL SISTEMA", contentX + contentW/2, yTitulo);
-
-  stroke(230, 180, 60);
-  strokeWeight(2);
-  line(contentX + contentW/2 - 40, yTitulo + 36, contentX + contentW/2 + 40, yTitulo + 36);
-  noStroke();
-
-  // ---- Tarjetas de los 5 módulos, en una sola fila ----
-  float cardY = yTitulo + 62;
-  float cardH = min(height - cardY - 55, 270);
-  float margen = contentW * 0.035f;
-  float gap = 16;
-  float cardW = (contentW - margen * 2 - gap * 4) / 5;
-  float cardXBase = contentX + margen;
-
-  String[] numeros   = {"1", "2", "3", "4", "5"};
-  String[] iconos    = {"sesiones", "instructores", "aprendices", "reportes", "salir"};
-  String[] titulos   = {
-    "MÓDULO DE\nSESIONES",
-    "MÓDULO DE\nINSTRUCTORES",
-    "MÓDULO DE\nAPRENDICES",
-    "MÓDULO DE\nREINICIO Y REPORTES",
-    "SALIR"
-  };
-  String[] descripciones = {
-    "Administra las sesiones de clases: asignar, consultar, cancelar y listar sesiones del mes.",
-    "Gestiona la información de los instructores: crear, consultar, actualizar, eliminar y listar con sus sesiones.",
-    "Gestiona la información de los aprendices: crear, consultar, actualizar, eliminar y listar con sus sesiones.",
-    "Reinicia contadores y genera reportes de disponibilidad de instructores, aprendices y del mes completo.",
-    "Guarda los cambios y sale del sistema o sale sin guardar con confirmación."
-  };
-  color[] colores = {COLOR_SESIONES, COLOR_INSTRUCTORES, COLOR_APRENDICES, COLOR_REPORTES, COLOR_SALIR};
-
-  botonesMenuPrincipal.clear();
-  for (int i = 0; i < 5; i++) {
-    float x = cardXBase + i * (cardW + gap);
-    Boton b = new Boton(x, cardY, cardW, cardH, numeros[i], titulos[i], descripciones[i], colores[i], colores[i]);
-    botonesMenuPrincipal.add(b);
-    dibujarTarjetaModulo(b, iconos[i]);
+  // Tira de indicadores: sólo si sobra espacio para las tarjetas.
+  if (disponible > 250) {
+    refrescarEstadisticas();
+    dibujarTiraIndicadores(x, y, w);
+    y += 88;
+    disponible = fondoY - y;
   }
 
-  fill(150);
-  textAlign(CENTER, BOTTOM);
-  textSize(11);
-  text("© 2025 Academia de Artes Barranquilla — Arte que transforma, cultura que nos une",
-       contentX + contentW/2, height - 12);
+  float altoTarjeta = constrain(disponible, 150, 250);
+  colocarRejilla(botonesMenuPrincipal, 0, 5, x, y, w, 5, altoTarjeta, 16);
+  for (int i = 0; i < botonesMenuPrincipal.size(); i++) botonesMenuPrincipal.get(i).dibujar();
+
+  dibujarPie();
 }
 
-// ---- MENÚ INSTRUCTORES ----
+void refrescarEstadisticas() {
+  if (millis() - ultimoRefrescoStats < 2500) return;
+  ultimoRefrescoStats = millis();
+
+  if (archivoInstructores == null || archivoAprendices == null || archivoSesiones == null) return;
+
+  ArrayList<Instructor> ins = archivoInstructores.listarTodos();
+  ArrayList<Aprendiz> aps = archivoAprendices.listarTodos();
+  ArrayList<Sesion> ses = archivoSesiones.listarTodas();
+
+  statInstructores = (ins == null) ? 0 : ins.size();
+  statAprendices   = (aps == null) ? 0 : aps.size();
+  statSesiones     = (ses == null) ? 0 : ses.size();
+
+  statInstDisponibles = 0;
+  if (ins != null) for (Instructor i : ins) if (i.estaDisponible()) statInstDisponibles++;
+
+  statAprConCupo = 0;
+  if (aps != null) for (Aprendiz a : aps) if (a.tieneAlgunCupoDisponible()) statAprConCupo++;
+}
+
+void dibujarTiraIndicadores(float x, float y, float w) {
+  String[] etiquetas = {"Instructores", "Con cupo este mes", "Aprendices", "Sesiones activas"};
+  int[]    valores   = {statInstructores, statInstDisponibles, statAprendices, statSesiones};
+  String[] iconos    = {"personas", "check", "gorro", "calendario"};
+  color[]  tintes    = {C_VERDE_BG, C_AZUL_BG, C_MORADO_BG, C_AMBAR_BG};
+  color[]  trazos    = {C_VERDE, C_AZUL, C_MORADO, C_AMBAR};
+
+  float gap = 14;
+  float cw = (w - gap * 3) / 4;
+  float ch = 72;
+
+  for (int i = 0; i < 4; i++) {
+    float cx = x + i * (cw + gap);
+    noStroke();
+    fill(249, 250, 252);
+    stroke(C_BORDE);
+    strokeWeight(1);
+    rect(cx, y, cw, ch, 10);
+    noStroke();
+
+    fill(tintes[i]);
+    ellipse(cx + 34, y + ch / 2, 40, 40);
+    dibujarIcono(iconos[i], cx + 34, y + ch / 2, 10, trazos[i]);
+
+    fill(COLOR_TITULO_MODULO);
+    textAlign(LEFT, BOTTOM);
+    tipoSansBold(constrain(cw * 0.13f, 20, 28));
+    text(str(valores[i]), cx + 62, y + ch / 2 + 4);
+
+    fill(C_TXT_SUAVE);
+    textAlign(LEFT, TOP);
+    tipoSans(11.5f);
+    text(recortarTexto(etiquetas[i], cw - 74), cx + 62, y + ch / 2 + 6);
+  }
+}
+
+
+// ================================================================
+// PANTALLA: MENÚ DE INSTRUCTORES
+// ================================================================
 void dibujarMenuInstructores() {
-  dibujarEncabezado("Gestión de Instructores");
-  for (Boton b : botonesMenuInstructores) b.dibujar();
+  float y = dibujarPantallaModulo(imgEncabezadoInstructores, C_VERDE,
+              "MÓDULO DE", "INSTRUCTORES",
+              descInstructores, citaInstructores, palInstructores,
+              "Módulo de Instructores");
+
+  float x = panelX + margenH;
+  float w = panelW - margenH * 2;
+
+  dibujarTituloModulo(x, y, "Módulo de Instructores", "GESTIÓN Y ADMINISTRACIÓN", null, null);
+  y += 74;
+
+  float disponible = (panelY + panelH - margenV) - y;
+  float altoTarjeta = constrain((disponible - 16) / 2, 112, 210);
+  colocarRejilla(botonesMenuInstructores, 0, 7, x, y, w, 4, altoTarjeta, 16);
+  for (int i = 0; i < botonesMenuInstructores.size(); i++) botonesMenuInstructores.get(i).dibujar();
+
+  dibujarPie();
 }
 
-// ---- MENÚ APRENDICES ----
+
+// ================================================================
+// PANTALLA: MENÚ DE APRENDICES
+// ================================================================
 void dibujarMenuAprendices() {
-  dibujarEncabezado("Gestión de Aprendices");
-  for (Boton b : botonesMenuAprendices) b.dibujar();
+  float y = dibujarPantallaModulo(imgEncabezadoAprendices, C_MORADO,
+              "MÓDULO DE", "APRENDICES",
+              descAprendices, citaAprendices, palAprendices,
+              "Módulo de Aprendices");
+
+  float x = panelX + margenH;
+  float w = panelW - margenH * 2;
+
+  dibujarTituloModulo(x, y, "Módulo de Aprendices", "GESTIÓN Y SEGUIMIENTO", null, null);
+  y += 74;
+
+  float disponible = (panelY + panelH - margenV) - y;
+  float altoTarjeta = constrain((disponible - 16) / 2, 112, 210);
+  colocarRejilla(botonesMenuAprendices, 0, 7, x, y, w, 4, altoTarjeta, 16);
+  for (int i = 0; i < botonesMenuAprendices.size(); i++) botonesMenuAprendices.get(i).dibujar();
+
+  dibujarPie();
 }
 
-// ---- MENÚ SESIONES (NUEVO ESTILO CON SIDEBAR + HERO + TARJETAS) ----
+
+// ================================================================
+// PANTALLA: MENÚ DE SESIONES
+// ================================================================
 void dibujarMenuSesiones() {
-  background(COLOR_FONDO);
-  dibujarBarraLateral("Sesiones");
-  dibujarBarraSuperior();
-  dibujarHeroSesiones();
-  dibujarBreadcrumb("Módulo de Sesiones");
+  float y = dibujarPantallaModulo(imgEncabezadoSesiones, C_AZUL,
+              "MÓDULO DE", "SESIONES",
+              descSesiones, citaSesiones, palSesiones,
+              "Módulo de Sesiones");
 
-  float contX = sidebarAncho + width * 0.022f;
-  float tituloY = topBarAlto + heroAlto + breadcrumbAlto + height * 0.020f;
-  dibujarTituloModulo(contX, tituloY, "Módulo de Sesiones", "GESTIÓN Y SEGUIMIENTO",
-    "“El compromiso también", "se aprende en comunidad”");
+  float x = panelX + margenH;
+  float w = panelW - margenH * 2;
 
-  for (Boton b : botonesMenuSesiones) b.dibujar();
+  dibujarTituloModulo(x, y, "Módulo de Sesiones", "SELECCIONA UNA OPCIÓN", null, null);
+  y += 74;
 
-  dibujarPieSesiones();
+  float disponible = (panelY + panelH - margenV) - y;
+  float altoTarjeta = constrain(disponible - 62, 150, 240);
+  colocarRejilla(botonesMenuSesiones, 0, 4, x, y, w, 4, altoTarjeta, 16);
+  for (int i = 0; i < 4; i++) botonesMenuSesiones.get(i).dibujar();
+
+  // Botón "Volver" (índice 4) como píldora de contorno
+  Boton volver = botonesMenuSesiones.get(4);
+  volver.colocar(x, y + altoTarjeta + 14, 132, 42);
+  volver.dibujar();
+
+  dibujarPie();
 }
 
-// ---- MENÚ REPORTES ----
+
+// ================================================================
+// PANTALLA: MENÚ DE REPORTES
+// ================================================================
 void dibujarMenuReportes() {
-  dibujarEncabezado("Reportes y Reinicio Mensual");
-  for (Boton b : botonesMenuReportes) b.dibujar();
+  float y = dibujarPantallaModulo(imgEncabezadoReportes, C_AMBAR,
+              "MÓDULO DE", "REPORTES",
+              descReportes, citaReportes, palReportes,
+              "Módulo de Reportes");
+
+  float x = panelX + margenH;
+  float w = panelW - margenH * 2;
+
+  dibujarTituloModulo(x, y, "Módulo de Reportes", "CONSULTA Y ANÁLISIS", null, null);
+  y += 74;
+
+  float disponible = (panelY + panelH - margenV) - y;
+  float altoTarjeta = constrain(disponible, 160, 250);
+  colocarRejilla(botonesMenuReportes, 0, 3, x, y, w, 3, altoTarjeta, 18);
+  for (int i = 0; i < botonesMenuReportes.size(); i++) botonesMenuReportes.get(i).dibujar();
+
+  dibujarPie();
 }
 
-// ---- REPORTE ----
+
+// ================================================================
+// PANTALLA: REPORTE DE DISPONIBILIDAD
+// ================================================================
 void dibujarReporte() {
-  dibujarEncabezado("Reporte de Disponibilidad y Sesiones");
-  botonVolver.dibujar();
+  float y = dibujarPantallaSub("Módulo de Reportes", "Reporte de Disponibilidad");
+  float x = panelX + margenH;
+  float w = panelW - margenH * 2;
+
+  refrescarEstadisticas();
+  dibujarTiraIndicadores(x, y, w);
+  y += 92;
 
   ArrayList<Instructor> instructores = archivoInstructores.listarTodos();
-  ArrayList<Aprendiz> aprendices = archivoAprendices.listarTodos();
   ArrayList<Sesion> sesiones = archivoSesiones.listarTodas();
 
   // ---- Conteos por especialidad de instructores ----
   HashMap<String, Integer> totalPorEspecialidad = new HashMap<String, Integer>();
   HashMap<String, Integer> disponiblesPorEspecialidad = new HashMap<String, Integer>();
-  int instructoresDisponiblesTotal = 0;
   for (Instructor inst : instructores) {
     String esp = inst.especialidad;
     totalPorEspecialidad.put(esp, (totalPorEspecialidad.containsKey(esp) ? totalPorEspecialidad.get(esp) : 0) + 1);
     if (inst.estaDisponible()) {
-      instructoresDisponiblesTotal++;
       disponiblesPorEspecialidad.put(esp, (disponiblesPorEspecialidad.containsKey(esp) ? disponiblesPorEspecialidad.get(esp) : 0) + 1);
     }
   }
@@ -476,408 +620,831 @@ void dibujarReporte() {
     sesionesPorEspecialidad.put(esp, (sesionesPorEspecialidad.containsKey(esp) ? sesionesPorEspecialidad.get(esp) : 0) + 1);
   }
 
-  // ---- Aprendices con cupo disponible ----
-  int aprendicesConCupo = 0;
-  for (Aprendiz a : aprendices) {
-    if (a.tieneAlgunCupoDisponible()) aprendicesConCupo++;
-  }
+  float colW = (w - 24) / 2;
+  float limiteY = panelY + panelH - margenV - 60;
 
-  float inicioXIzq = contentX + contentW * 0.05f;
-  float inicioXDer = contentX + contentW * 0.53f;
-  float y = height * 0.19f;
-
-  fill(20);
+  // ---- Columna izquierda ----
+  fill(COLOR_TITULO_MODULO);
   textAlign(LEFT, TOP);
-  textSize(17);
-  text("Resumen general", inicioXIzq, y);
-  y += 30;
-  textSize(14);
-  fill(60);
-  text("Instructores registrados: " + instructores.size(), inicioXIzq, y); y += 24;
-  text("Instructores disponibles (menos de " + ArchivoInstructores.MAX_SESIONES_MES + " sesiones): " + instructoresDisponiblesTotal, inicioXIzq, y); y += 24;
-  text("Aprendices registrados: " + aprendices.size(), inicioXIzq, y); y += 24;
-  text("Aprendices con al menos una especialidad con cupo: " + aprendicesConCupo, inicioXIzq, y); y += 24;
-  text("Sesiones activas asignadas: " + sesiones.size(), inicioXIzq, y); y += 34;
+  tipoSansBold(15);
+  text("Disponibilidad por especialidad", x, y);
+  float yi = y + 30;
 
-  fill(20);
-  textSize(17);
-  text("Disponibilidad por especialidad (instructores)", inicioXIzq, y);
-  y += 30;
-  textSize(14);
-  fill(60);
   if (totalPorEspecialidad.isEmpty()) {
-    text("No hay instructores registrados.", inicioXIzq, y);
+    dibujarTablaVacia(x, yi, colW, "No hay instructores registrados.");
   } else {
     for (String esp : totalPorEspecialidad.keySet()) {
+      if (yi > limiteY) break;
       int total = totalPorEspecialidad.get(esp);
       int disp = disponiblesPorEspecialidad.containsKey(esp) ? disponiblesPorEspecialidad.get(esp) : 0;
-      text(esp + ": " + disp + " disponibles de " + total, inicioXIzq, y);
-      y += 24;
-      if (y > height - 90) break;
+
+      fill(C_TXT);
+      tipoSans(13);
+      textAlign(LEFT, TOP);
+      text(recortarTexto(esp, colW - 90), x, yi);
+      fill(C_TXT_SUAVE);
+      textAlign(RIGHT, TOP);
+      text(disp + " de " + total, x + colW, yi);
+      textAlign(LEFT, TOP);
+      dibujarBarraProgreso(x, yi + 20, colW, 7, disp, max(1, total));
+      yi += 40;
     }
   }
 
-  float yDer = height * 0.19f;
-  fill(20);
-  textSize(17);
-  text("Sesiones asignadas por especialidad", inicioXDer, yDer);
-  yDer += 30;
-  textSize(14);
-  fill(60);
+  // ---- Columna derecha ----
+  float xd = x + colW + 24;
+  fill(COLOR_TITULO_MODULO);
+  textAlign(LEFT, TOP);
+  tipoSansBold(15);
+  text("Sesiones asignadas por especialidad", xd, y);
+  float yd = y + 30;
+
   if (sesionesPorEspecialidad.isEmpty()) {
-    text("No hay sesiones asignadas todavía.", inicioXDer, yDer);
+    dibujarTablaVacia(xd, yd, colW, "No hay sesiones asignadas todavía.");
   } else {
+    int maxSes = 1;
+    for (String esp : sesionesPorEspecialidad.keySet()) maxSes = max(maxSes, sesionesPorEspecialidad.get(esp));
     for (String esp : sesionesPorEspecialidad.keySet()) {
-      text(esp + ": " + sesionesPorEspecialidad.get(esp) + " sesión(es)", inicioXDer, yDer);
-      yDer += 24;
-      if (yDer > height - 90) break;
+      if (yd > limiteY) break;
+      int n = sesionesPorEspecialidad.get(esp);
+      fill(C_TXT);
+      tipoSans(13);
+      textAlign(LEFT, TOP);
+      text(recortarTexto(esp, colW - 90), xd, yd);
+      fill(C_TXT_SUAVE);
+      textAlign(RIGHT, TOP);
+      text(n + (n == 1 ? " sesión" : " sesiones"), xd + colW, yd);
+      textAlign(LEFT, TOP);
+      dibujarBarraProgreso(xd, yd + 20, colW, 7, n, maxSes);
+      yd += 40;
     }
+  }
+
+  colocarBotonVolverPanel(botonVolver);
+  botonVolver.dibujar();
+  dibujarPie();
+}
+
+
+// ================================================================
+// AYUDAS DE COMPOSICIÓN DE FORMULARIOS
+// ================================================================
+
+// Coloca un botón "Volver" en la esquina inferior izquierda del panel.
+void colocarBotonVolverPanel(Boton b) {
+  b.colocar(panelX + margenH, panelY + panelH - margenV - 42, 132, 42);
+}
+
+// Tarjeta lateral con las reglas del formulario. Es sólo informativa.
+void dibujarTarjetaAyuda(float x, float y, float w, String titulo, String[] lineas) {
+  float h = 46 + lineas.length * 26;
+  noStroke();
+  fill(249, 250, 252);
+  stroke(C_BORDE);
+  strokeWeight(1);
+  rect(x, y, w, h, 10);
+  noStroke();
+
+  dibujarIcono("etiqueta", x + 22, y + 26, 8, C_AZUL);
+  fill(COLOR_TITULO_MODULO);
+  textAlign(LEFT, CENTER);
+  tipoSansBold(12.5f);
+  text(titulo, x + 38, y + 26);
+
+  textAlign(LEFT, TOP);
+  tipoSans(12);
+  for (int i = 0; i < lineas.length; i++) {
+    fill(C_TXT_TENUE);
+    ellipse(x + 24, y + 52 + i * 26 + 6, 4, 4);
+    fill(C_TXT_SUAVE);
+    text(recortarTexto(lineas[i], w - 50), x + 36, y + 52 + i * 26);
   }
 }
 
+// Ficha de resultado (consulta de instructor / aprendiz / sesión).
+void dibujarFichaDatos(float x, float y, float w, String titulo,
+                       String[] etiquetas, String[] valores, color acento) {
+  float h = 58 + etiquetas.length * 32;
+  sombraSuave(x, y, w, h, 12, 26);
+  noStroke();
+  fill(255);
+  stroke(C_BORDE);
+  strokeWeight(1);
+  rect(x, y, w, h, 12);
+  noStroke();
+  fill(acento);
+  rect(x, y, w, 4, 12, 12, 0, 0);
+
+  fill(COLOR_TITULO_MODULO);
+  textAlign(LEFT, TOP);
+  tipoSerif(17);
+  text(titulo, x + 20, y + 18);
+
+  for (int i = 0; i < etiquetas.length; i++) {
+    float fy = y + 54 + i * 32;
+    fill(C_TXT_TENUE);
+    tipoSansBold(10.5f);
+    textAlign(LEFT, TOP);
+    text(letraEspaciada(etiquetas[i].toUpperCase()), x + 20, fy);
+    fill(C_TXT);
+    tipoSans(13.5f);
+    textAlign(RIGHT, TOP);
+    text(recortarTexto(valores[i], w * 0.55f), x + w - 20, fy - 1);
+    textAlign(LEFT, TOP);
+  }
+}
+
+
 // ================================================================
-// FUNCIONES DE DIBUJO - FORMULARIOS Y LISTADOS
+// FORMULARIOS: INSTRUCTORES
 // ================================================================
 
 void dibujarFormularioCrearInstructor() {
-  dibujarEncabezado("Crear Instructor");
+  float y = dibujarPantallaSub("Módulo de Instructores", "Crear Instructor");
+  float x = panelX + margenH;
+  float colW = min((panelW - margenH * 2) * 0.48f, 400);
+
+  campoCedula.colocar(x, y + 24, colW);
+  campoNombre.colocar(x, y + 24 + 76, colW);
+  campoEspecialidad.colocar(x, y + 24 + 152, colW);
+  campoTelefono.colocar(x, y + 24 + 228, colW);
   campoCedula.dibujar();
   campoNombre.dibujar();
   campoEspecialidad.dibujar();
   campoTelefono.dibujar();
+
+  dibujarTarjetaAyuda(x + colW + 32, y + 24, min(panelW - margenH * 2 - colW - 32, 380),
+    "Antes de guardar", new String[] {
+      "La cédula debe tener entre 6 y 15 dígitos.",
+      "Todos los campos son obligatorios.",
+      "No puede repetirse una cédula ya registrada.",
+      "El límite mensual es de " + ArchivoInstructores.MAX_SESIONES_MES + " sesiones." });
+
+  float by = panelY + panelH - margenV - 46;
+  botonGuardar.label = "Guardar";
+  botonGuardar.colocar(x, by, 170, 46);
+  botonCancelar.colocar(x + 186, by, 140, 46);
   botonGuardar.dibujar();
   botonCancelar.dibujar();
+
+  botonVolver.colocar(panelX + panelW - margenH - 132, by + 2, 132, 42);
   botonVolver.dibujar();
+  dibujarPie();
 }
 
 void dibujarFormularioConsultarInstructor() {
-  dibujarEncabezado("Consultar Instructor");
-  float inicioX = centroX - 170;
-  campoCedula.x = inicioX; campoCedula.y = height * 0.28f;
+  float y = dibujarPantallaSub("Módulo de Instructores", "Consultar Instructor");
+  float x = panelX + margenH;
+  float colW = min((panelW - margenH * 2) * 0.44f, 360);
+
+  campoCedula.colocar(x, y + 24, colW - 148);
   campoCedula.dibujar();
-  botonBuscar.x = inicioX + 360; botonBuscar.y = height * 0.27f;
-  botonBuscar.w = 120; botonBuscar.h = 40;
+  botonBuscar.label = "Buscar";
+  botonBuscar.colocar(x + colW - 138, y + 24, 138, 44);
   botonBuscar.dibujar();
-  botonVolver.dibujar();
+
   if (instructorEncontrado != null) {
-    fill(20);
-    textAlign(LEFT, TOP);
-    textSize(18);
-    text(instructorEncontrado.toStringResumido(), inicioX, height * 0.40f);
-    text(instructorEncontrado.estaDisponible() ? "✓ Disponible este mes" : "✗ SIN cupo este mes", inicioX, height * 0.46f);
+    dibujarFichaDatos(x, y + 104, min(panelW - margenH * 2, 520),
+      instructorEncontrado.nombre,
+      new String[] {"Cédula", "Especialidad", "Teléfono", "Sesiones del mes"},
+      new String[] {
+        instructorEncontrado.cedula,
+        instructorEncontrado.especialidad,
+        instructorEncontrado.telefono,
+        instructorEncontrado.sesionesRealizadas + " / " + ArchivoInstructores.MAX_SESIONES_MES },
+      C_VERDE);
+
+    boolean disp = instructorEncontrado.estaDisponible();
+    dibujarBadge(disp ? "Disponible este mes" : "Sin cupo este mes",
+      x, y + 104 + 58 + 4 * 32 + 14,
+      disp ? C_VERDE : C_ROJO, disp ? C_VERDE_BG : C_ROJO_BG);
+  } else {
+    dibujarTarjetaAyuda(x, y + 104, min(panelW - margenH * 2, 520),
+      "Cómo consultar", new String[] {
+        "Escribe la cédula del instructor y pulsa Buscar.",
+        "Se mostrará su especialidad y su cupo del mes." });
   }
+
+  colocarBotonVolverPanel(botonVolver);
+  botonVolver.dibujar();
+  dibujarPie();
 }
 
 void dibujarFormularioActualizarInstructor() {
-  dibujarEncabezado("Actualizar Instructor");
-  float inicioX = centroX - 170;
-  campoCedula.x = inicioX; campoCedula.y = height * 0.22f;
+  float y = dibujarPantallaSub("Módulo de Instructores", "Actualizar Instructor");
+  float x = panelX + margenH;
+  float colW = min((panelW - margenH * 2) * 0.48f, 400);
+
+  campoCedula.colocar(x, y + 24, colW - 148);
   campoCedula.dibujar();
-  botonBuscar.x = inicioX + 360; botonBuscar.y = height * 0.21f;
-  botonBuscar.w = 120; botonBuscar.h = 40;
+  botonBuscar.label = "Buscar";
+  botonBuscar.colocar(x + colW - 138, y + 24, 138, 44);
   botonBuscar.dibujar();
-  campoNombre.y = height * 0.34f;
-  campoEspecialidad.y = height * 0.44f;
-  campoTelefono.y = height * 0.54f;
+
+  campoNombre.colocar(x, y + 24 + 84, colW);
+  campoEspecialidad.colocar(x, y + 24 + 160, colW);
+  campoTelefono.colocar(x, y + 24 + 236, colW);
   campoNombre.dibujar();
   campoEspecialidad.dibujar();
   campoTelefono.dibujar();
-  botonGuardar.y = height * 0.66f;
+
+  dibujarTarjetaAyuda(x + colW + 32, y + 24, min(panelW - margenH * 2 - colW - 32, 380),
+    "Cómo actualizar", new String[] {
+      "Busca primero al instructor por su cédula.",
+      "Los campos se rellenan con los datos actuales.",
+      "Modifica lo necesario y pulsa Guardar." });
+
+  float by = panelY + panelH - margenV - 46;
+  botonGuardar.label = "Guardar cambios";
+  botonGuardar.colocar(x, by, 200, 46);
   botonGuardar.dibujar();
+
+  botonVolver.colocar(panelX + panelW - margenH - 132, by + 2, 132, 42);
   botonVolver.dibujar();
+  dibujarPie();
 }
 
 void dibujarFormularioEliminarInstructor() {
-  dibujarEncabezado("Eliminar Instructor");
-  float inicioX = centroX - 170;
-  campoCedula.x = inicioX; campoCedula.y = height * 0.28f;
+  float y = dibujarPantallaSub("Módulo de Instructores", "Eliminar Instructor");
+  float x = panelX + margenH;
+  float colW = min((panelW - margenH * 2) * 0.44f, 360);
+
+  campoCedula.colocar(x, y + 24, colW);
   campoCedula.dibujar();
-  botonEliminar.x = inicioX; botonEliminar.y = height * 0.40f;
+
+  dibujarAvisoPeligro(x, y + 104, min(panelW - margenH * 2, 520),
+    "Esta acción no se puede deshacer",
+    "El registro del instructor se eliminará de forma permanente del archivo.");
+
+  botonEliminar.label = "Eliminar instructor";
+  botonEliminar.colocar(x, y + 200, 210, 46);
   botonEliminar.dibujar();
+
+  colocarBotonVolverPanel(botonVolver);
   botonVolver.dibujar();
+  dibujarPie();
+}
+
+void dibujarAvisoPeligro(float x, float y, float w, String titulo, String detalle) {
+  float h = 70;
+  noStroke();
+  fill(C_ROJO_BG);
+  rect(x, y, w, h, 10);
+  fill(C_ROJO);
+  rect(x, y, 4, h, 10, 0, 0, 10);
+  dibujarIcono("alerta", x + 32, y + h / 2, 11, C_ROJO);
+
+  fill(C_ROJO);
+  textAlign(LEFT, TOP);
+  tipoSansBold(13);
+  text(titulo, x + 56, y + 16);
+  fill(150, 60, 60);
+  tipoSans(12);
+  text(recortarTexto(detalle, w - 76), x + 56, y + 38);
 }
 
 void dibujarListadoInstructores() {
-  dibujarEncabezado("Instructores Registrados");
-  botonVolver.dibujar();
+  float y = dibujarPantallaSub("Módulo de Instructores", "Instructores Registrados");
+  float x = panelX + margenH;
+  float w = panelW - margenH * 2;
+
   if (listaInstructores == null) listaInstructores = archivoInstructores.listarTodos();
-  float inicioX = contentX + contentW * 0.06f;
-  float y = height * 0.20f;
-  fill(20);
-  textAlign(LEFT, TOP);
-  textSize(16);
+
   if (listaInstructores.isEmpty()) {
-    text("No hay instructores registrados.", inicioX, y);
+    dibujarTablaVacia(x, y + 12, w, "No hay instructores registrados.");
   } else {
-    fill(100);
-    text("Nombre", inicioX, y);
-    text("Cédula", inicioX + 250, y);
-    text("Especialidad", inicioX + 400, y);
-    text("Sesiones", inicioX + 550, y);
-    y += 30;
-    fill(20);
+    String[] cols = {"Nombre", "Cédula", "Especialidad", "Teléfono", "Sesiones del mes"};
+    float[] pesos = {0.28f, 0.15f, 0.22f, 0.15f, 0.20f};
+    float ty = dibujarEncabezadoTabla(x, y + 12, w, cols, pesos);
+
+    float altoFila = 44;
+    float limite = panelY + panelH - margenV - 56;
+    int i = 0;
     for (Instructor inst : listaInstructores) {
-      text(inst.nombre, inicioX, y);
-      text(inst.cedula, inicioX + 250, y);
-      text(inst.especialidad, inicioX + 400, y);
-      text(inst.sesionesRealizadas + "/" + ArchivoInstructores.MAX_SESIONES_MES, inicioX + 550, y);
-      y += 30;
-      if (y > height - 80) break;
+      if (ty + altoFila > limite) break;
+      dibujarFilaTabla(x, ty, w, altoFila, i);
+
+      float cx = x + 14;
+      textAlign(LEFT, CENTER);
+      fill(C_TXT);
+      tipoSansBold(13);
+      text(recortarTexto(inst.nombre, w * pesos[0] - 18), cx, ty + altoFila / 2);
+      cx += w * pesos[0];
+
+      tipoSans(13);
+      fill(C_TXT_SUAVE);
+      text(inst.cedula, cx, ty + altoFila / 2);
+      cx += w * pesos[1];
+      fill(C_TXT);
+      text(recortarTexto(inst.especialidad, w * pesos[2] - 18), cx, ty + altoFila / 2);
+      cx += w * pesos[2];
+      fill(C_TXT_SUAVE);
+      text(recortarTexto(inst.telefono, w * pesos[3] - 18), cx, ty + altoFila / 2);
+      cx += w * pesos[3];
+
+      // Última columna: contador + barra reactiva al dato
+      float barW = w * pesos[4] - 24;
+      fill(C_TXT);
+      tipoSansBold(12);
+      text(inst.sesionesRealizadas + " / " + ArchivoInstructores.MAX_SESIONES_MES, cx, ty + altoFila / 2 - 8);
+      dibujarBarraProgreso(cx, ty + altoFila / 2 + 6, barW, 6,
+                           inst.sesionesRealizadas, ArchivoInstructores.MAX_SESIONES_MES);
+
+      ty += altoFila;
+      i++;
     }
+    dibujarPieDeTabla(x, ty, w, i, listaInstructores.size(), "instructores");
+  }
+
+  colocarBotonVolverPanel(botonVolver);
+  botonVolver.dibujar();
+  dibujarPie();
+}
+
+void dibujarPieDeTabla(float x, float y, float w, int mostrados, int total, String etiqueta) {
+  fill(C_TXT_TENUE);
+  textAlign(LEFT, TOP);
+  tipoSans(11.5f);
+  if (mostrados < total) {
+    text("Mostrando " + mostrados + " de " + total + " " + etiqueta +
+         " (amplía la ventana para ver más).", x, y + 12);
+  } else {
+    text("Total: " + total + " " + etiqueta + ".", x, y + 12);
   }
 }
 
+
+// ================================================================
+// FORMULARIOS: APRENDICES
+// ================================================================
+
 void dibujarFormularioCrearAprendiz() {
-  dibujarEncabezado("Crear Aprendiz");
+  float y = dibujarPantallaSub("Módulo de Aprendices", "Crear Aprendiz");
+  float x = panelX + margenH;
+  float colW = min((panelW - margenH * 2) * 0.48f, 400);
+
+  campoCedulaAprendiz.colocar(x, y + 24, colW);
+  campoNombreAprendiz.colocar(x, y + 24 + 76, colW);
+  campoEspecialidadAprendiz.colocar(x, y + 24 + 152, colW);
   campoCedulaAprendiz.dibujar();
   campoNombreAprendiz.dibujar();
   campoEspecialidadAprendiz.dibujar();
+
+  dibujarTarjetaAyuda(x + colW + 32, y + 24, min(panelW - margenH * 2 - colW - 32, 380),
+    "Antes de guardar", new String[] {
+      "La cédula debe tener entre 6 y 15 dígitos.",
+      "Separa las especialidades con comas.",
+      "Ejemplo: Danza, Pintura, Música.",
+      "Límite: " + Aprendiz.MAX_SESIONES_MES + " sesiones por especialidad al mes." });
+
+  float by = panelY + panelH - margenV - 46;
+  botonGuardar.label = "Guardar";
+  botonGuardar.colocar(x, by, 170, 46);
+  botonCancelar.colocar(x + 186, by, 140, 46);
   botonGuardar.dibujar();
   botonCancelar.dibujar();
+
+  botonVolver.colocar(panelX + panelW - margenH - 132, by + 2, 132, 42);
   botonVolver.dibujar();
+  dibujarPie();
 }
 
 void dibujarFormularioConsultarAprendiz() {
-  dibujarEncabezado("Consultar Aprendiz");
-  float inicioX = centroX - 170;
-  campoCedulaAprendiz.x = inicioX; campoCedulaAprendiz.y = height * 0.28f;
+  float y = dibujarPantallaSub("Módulo de Aprendices", "Consultar Aprendiz");
+  float x = panelX + margenH;
+  float colW = min((panelW - margenH * 2) * 0.44f, 360);
+
+  campoCedulaAprendiz.colocar(x, y + 24, colW - 148);
   campoCedulaAprendiz.dibujar();
-  botonBuscar.x = inicioX + 360; botonBuscar.y = height * 0.27f;
-  botonBuscar.w = 120; botonBuscar.h = 40;
+  botonBuscar.label = "Buscar";
+  botonBuscar.colocar(x + colW - 138, y + 24, 138, 44);
   botonBuscar.dibujar();
-  botonVolver.dibujar();
+
   if (aprendizEncontrado != null) {
-    fill(20);
-    textAlign(LEFT, TOP);
-    textSize(18);
-    text(aprendizEncontrado.toStringResumido(), inicioX, height * 0.40f);
+    dibujarFichaDatos(x, y + 104, min(panelW - margenH * 2, 560),
+      aprendizEncontrado.nombre,
+      new String[] {"Cédula", "Especialidades"},
+      new String[] {aprendizEncontrado.cedula, aprendizEncontrado.especialidadesResumenCorto()},
+      C_MORADO);
+
+    boolean cupo = aprendizEncontrado.tieneAlgunCupoDisponible();
+    dibujarBadge(cupo ? "Tiene cupo disponible" : "Sin cupo este mes",
+      x, y + 104 + 58 + 2 * 32 + 14,
+      cupo ? C_VERDE : C_ROJO, cupo ? C_VERDE_BG : C_ROJO_BG);
+  } else {
+    dibujarTarjetaAyuda(x, y + 104, min(panelW - margenH * 2, 560),
+      "Cómo consultar", new String[] {
+        "Escribe la cédula del aprendiz y pulsa Buscar.",
+        "Verás sus especialidades y las sesiones usadas." });
   }
+
+  colocarBotonVolverPanel(botonVolver);
+  botonVolver.dibujar();
+  dibujarPie();
 }
 
 void dibujarFormularioActualizarAprendiz() {
-  dibujarEncabezado("Actualizar Aprendiz");
-  float inicioX = centroX - 170;
-  campoCedulaAprendiz.x = inicioX; campoCedulaAprendiz.y = height * 0.22f;
+  float y = dibujarPantallaSub("Módulo de Aprendices", "Actualizar Aprendiz");
+  float x = panelX + margenH;
+  float colW = min((panelW - margenH * 2) * 0.48f, 400);
+
+  campoCedulaAprendiz.colocar(x, y + 24, colW - 148);
   campoCedulaAprendiz.dibujar();
-  botonBuscar.x = inicioX + 360; botonBuscar.y = height * 0.21f;
-  botonBuscar.w = 120; botonBuscar.h = 40;
+  botonBuscar.label = "Buscar";
+  botonBuscar.colocar(x + colW - 138, y + 24, 138, 44);
   botonBuscar.dibujar();
-  campoNombreAprendiz.y = height * 0.34f;
-  campoEspecialidadAprendiz.y = height * 0.44f;
+
+  campoNombreAprendiz.colocar(x, y + 24 + 84, colW);
+  campoEspecialidadAprendiz.colocar(x, y + 24 + 160, colW);
   campoNombreAprendiz.dibujar();
   campoEspecialidadAprendiz.dibujar();
-  botonGuardar.y = height * 0.56f;
+
+  dibujarTarjetaAyuda(x + colW + 32, y + 24, min(panelW - margenH * 2 - colW - 32, 380),
+    "Cómo actualizar", new String[] {
+      "Busca primero al aprendiz por su cédula.",
+      "Separa las especialidades con comas.",
+      "Modifica lo necesario y pulsa Guardar." });
+
+  float by = panelY + panelH - margenV - 46;
+  botonGuardar.label = "Guardar cambios";
+  botonGuardar.colocar(x, by, 200, 46);
   botonGuardar.dibujar();
+
+  botonVolver.colocar(panelX + panelW - margenH - 132, by + 2, 132, 42);
   botonVolver.dibujar();
+  dibujarPie();
 }
 
 void dibujarFormularioEliminarAprendiz() {
-  dibujarEncabezado("Eliminar Aprendiz");
-  float inicioX = centroX - 170;
-  campoCedulaAprendiz.x = inicioX; campoCedulaAprendiz.y = height * 0.28f;
+  float y = dibujarPantallaSub("Módulo de Aprendices", "Eliminar Aprendiz");
+  float x = panelX + margenH;
+  float colW = min((panelW - margenH * 2) * 0.44f, 360);
+
+  campoCedulaAprendiz.colocar(x, y + 24, colW);
   campoCedulaAprendiz.dibujar();
-  botonEliminar.x = inicioX; botonEliminar.y = height * 0.40f;
+
+  dibujarAvisoPeligro(x, y + 104, min(panelW - margenH * 2, 520),
+    "Esta acción no se puede deshacer",
+    "El registro del aprendiz se eliminará de forma permanente del archivo.");
+
+  botonEliminar.label = "Eliminar aprendiz";
+  botonEliminar.colocar(x, y + 200, 200, 46);
   botonEliminar.dibujar();
+
+  colocarBotonVolverPanel(botonVolver);
   botonVolver.dibujar();
+  dibujarPie();
 }
 
 void dibujarListadoAprendices() {
-  dibujarEncabezado("Aprendices Registrados");
-  botonVolver.dibujar();
+  float y = dibujarPantallaSub("Módulo de Aprendices", "Aprendices Registrados");
+  float x = panelX + margenH;
+  float w = panelW - margenH * 2;
+
   if (listaAprendices == null) listaAprendices = archivoAprendices.listarTodos();
-  float inicioX = contentX + contentW * 0.06f;
-  float y = height * 0.20f;
-  fill(20);
-  textAlign(LEFT, TOP);
-  textSize(16);
+
   if (listaAprendices.isEmpty()) {
-    text("No hay aprendices registrados.", inicioX, y);
+    dibujarTablaVacia(x, y + 12, w, "No hay aprendices registrados.");
   } else {
-    fill(100);
-    text("Nombre", inicioX, y);
-    text("Cédula", inicioX + 250, y);
-    text("Especialidades (sesiones/mes)", inicioX + 400, y);
-    y += 30;
-    fill(20);
+    String[] cols = {"Nombre", "Cédula", "Especialidades (sesiones del mes)", "Estado"};
+    float[] pesos = {0.26f, 0.15f, 0.42f, 0.17f};
+    float ty = dibujarEncabezadoTabla(x, y + 12, w, cols, pesos);
+
+    float altoFila = 42;
+    float limite = panelY + panelH - margenV - 56;
+    int i = 0;
     for (Aprendiz apr : listaAprendices) {
-      text(apr.nombre, inicioX, y);
-      text(apr.cedula, inicioX + 250, y);
-      text(apr.especialidadesResumenCorto(), inicioX + 400, y);
-      y += 30;
-      if (y > height - 80) break;
+      if (ty + altoFila > limite) break;
+      dibujarFilaTabla(x, ty, w, altoFila, i);
+
+      float cx = x + 14;
+      textAlign(LEFT, CENTER);
+      fill(C_TXT);
+      tipoSansBold(13);
+      text(recortarTexto(apr.nombre, w * pesos[0] - 18), cx, ty + altoFila / 2);
+      cx += w * pesos[0];
+
+      tipoSans(13);
+      fill(C_TXT_SUAVE);
+      text(apr.cedula, cx, ty + altoFila / 2);
+      cx += w * pesos[1];
+      fill(C_TXT);
+      text(recortarTexto(apr.especialidadesResumenCorto(), w * pesos[2] - 18), cx, ty + altoFila / 2);
+      cx += w * pesos[2];
+
+      boolean cupo = apr.tieneAlgunCupoDisponible();
+      dibujarBadge(cupo ? "Con cupo" : "Completo", cx, ty + altoFila / 2 - 11,
+                   cupo ? C_VERDE : C_ROJO, cupo ? C_VERDE_BG : C_ROJO_BG);
+
+      ty += altoFila;
+      i++;
     }
+    dibujarPieDeTabla(x, ty, w, i, listaAprendices.size(), "aprendices");
   }
+
+  colocarBotonVolverPanel(botonVolver);
+  botonVolver.dibujar();
+  dibujarPie();
 }
 
+
 // ================================================================
-// FORMULARIOS DEL MÓDULO DE SESIONES (CON NUEVO ESTILO)
+// FORMULARIOS: SESIONES
 // ================================================================
 
 void dibujarFormularioAsignarSesion() {
-  float contentTop = dibujarEncabezadoSesionesSub("Asignar Sesión");
-  float inicioX = sidebarAncho + width * 0.022f;
+  float y = dibujarPantallaSub("Módulo de Sesiones", "Asignar Sesión");
+  float x = panelX + margenH;
+  float colW = min((panelW - margenH * 2) * 0.46f, 400);
 
-  fill(COLOR_GRIS_DESC);
-  textAlign(LEFT, TOP);
-  textSize(14);
-  text("Paso 1: Ingresa la cédula del aprendiz", inicioX, contentTop);
-  campoCedulaAprendiz.x = inicioX;
-  campoCedulaAprendiz.y = contentTop + 34;
+  // ---- Paso 1 ----
+  dibujarEtiquetaPaso(x, y, 1, "Identifica al aprendiz");
+  campoCedulaAprendiz.colocar(x, y + 46, colW - 158);
   campoCedulaAprendiz.dibujar();
-  botonBuscar.x = inicioX + 360;
-  botonBuscar.y = contentTop + 32;
-  botonBuscar.w = 120;
-  botonBuscar.h = 40;
   botonBuscar.label = "Verificar";
+  botonBuscar.colocar(x + colW - 148, y + 46, 148, 44);
   botonBuscar.dibujar();
-  if (aprendizEncontrado != null) {
-    fill(20);
-    textAlign(LEFT, TOP);
-    textSize(15);
-    text("Aprendiz: " + aprendizEncontrado.nombre, inicioX, contentTop + 90);
-    text("Especialidades: " + aprendizEncontrado.especialidadesResumenCorto(), inicioX, contentTop + 118);
+
+  float y2 = y + 122;
+
+  // Por defecto, los controles del paso 2 quedan fuera de pantalla;
+  // sólo se colocan cuando realmente se dibujan.
+  aparcar(campoEspecialidadSesion);
+  aparcar(campoFechaSesion);
+  aparcar(botonAsignar);
+
+  if (aprendizEncontrado == null) {
+    dibujarTarjetaAyuda(x, y2, min(panelW - margenH * 2, 560),
+      "Proceso de asignación", new String[] {
+        "1. Verifica la cédula del aprendiz.",
+        "2. Indica la especialidad y la fecha de la sesión.",
+        "3. Elige un instructor disponible de la lista." });
+  } else {
+    dibujarFichaDatos(x, y2, min(panelW - margenH * 2, 560),
+      aprendizEncontrado.nombre,
+      new String[] {"Cédula", "Especialidades"},
+      new String[] {aprendizEncontrado.cedula, aprendizEncontrado.especialidadesResumenCorto()},
+      C_AZUL);
+    float fichaAlto = 58 + 2 * 32;
+
     if (!aprendizEncontrado.tieneAlgunCupoDisponible()) {
-      fill(200, 40, 40);
-      text("⚠ El aprendiz ya completó sus sesiones del mes en todas sus especialidades", inicioX, contentTop + 152);
+      dibujarAvisoPeligro(x, y2 + fichaAlto + 16, min(panelW - margenH * 2, 560),
+        "Sin cupo disponible",
+        "El aprendiz ya completó sus sesiones del mes en todas sus especialidades.");
     } else {
-      fill(39, 174, 96);
-      text("✓ El aprendiz tiene cupo disponible en al menos una especialidad", inicioX, contentTop + 152);
-      fill(80);
-      text("Especialidad de la sesión (debe ser una que practique):", inicioX, contentTop + 194);
-      campoEspecialidadSesion.x = inicioX;
-      campoEspecialidadSesion.y = contentTop + 220;
+      dibujarBadge("Tiene cupo disponible", x, y2 + fichaAlto + 14, C_VERDE, C_VERDE_BG);
+
+      float y3 = y2 + fichaAlto + 52;
+      dibujarEtiquetaPaso(x, y3, 2, "Especialidad y fecha de la sesión");
+
+      campoEspecialidadSesion.colocar(x, y3 + 46, colW);
+      campoFechaSesion.colocar(x, y3 + 122, colW);
       campoEspecialidadSesion.dibujar();
-      text("Fecha de la sesión (AAAA-MM-DD, hoy o futura; vacío = hoy):", inicioX, contentTop + 274);
-      campoFechaSesion.x = inicioX;
-      campoFechaSesion.y = contentTop + 300;
       campoFechaSesion.dibujar();
-      botonAsignar.x = inicioX;
-      botonAsignar.y = contentTop + 360;
+
+      fill(C_TXT_TENUE);
+      textAlign(LEFT, TOP);
+      tipoSans(11.5f);
+      text("Debe ser una especialidad que el aprendiz practique.", x, y3 + 94);
+      text("Formato AAAA-MM-DD, hoy o futura. Vacío = hoy.", x, y3 + 170);
+
+      botonAsignar.label = "Buscar instructores";
+      botonAsignar.colocar(x, y3 + 200, 230, 46);
       botonAsignar.dibujar();
     }
   }
+
+  botonVolverSesiones.colocar(panelX + panelW - margenH - 132, panelY + panelH - margenV - 42, 132, 42);
   botonVolverSesiones.dibujar();
-  dibujarPieSesiones();
+  dibujarPie();
+}
+
+void dibujarEtiquetaPaso(float x, float y, int numero, String texto) {
+  noStroke();
+  fill(C_AZUL_BG);
+  ellipse(x + 14, y + 14, 28, 28);
+  fill(C_AZUL);
+  textAlign(CENTER, CENTER);
+  tipoSansBold(13);
+  text(str(numero), x + 14, y + 14);
+
+  fill(COLOR_TITULO_MODULO);
+  textAlign(LEFT, CENTER);
+  tipoSansBold(14);
+  text(texto, x + 38, y + 14);
 }
 
 void dibujarSeleccionInstructor() {
-  float contentTop = dibujarEncabezadoSesionesSub("Seleccionar Instructor");
-  float inicioX = sidebarAncho + width * 0.022f;
-  fill(COLOR_GRIS_DESC);
-  textAlign(LEFT, TOP);
-  textSize(15);
-  text("Paso 2: Instructores disponibles para " + especialidadSeleccionada +
-       " el " + fechaSesionSeleccionada, inicioX, contentTop);
+  float y = dibujarPantallaSub("Módulo de Sesiones", "Seleccionar Instructor");
+  float x = panelX + margenH;
+  float w = panelW - margenH * 2;
+
+  dibujarEtiquetaPaso(x, y, 3, "Instructores disponibles para " +
+    especialidadSeleccionada + " el " + fechaSesionSeleccionada);
+
+  float ty = y + 52;
+
   if (instructoresDisponibles == null || instructoresDisponibles.isEmpty()) {
-    fill(200, 40, 40);
-    textAlign(LEFT, TOP);
-    textSize(16);
-    text("No hay instructores disponibles para esta especialidad", inicioX, contentTop + 40);
-    botonVolverSesiones.dibujar();
-    dibujarPieSesiones();
-    return;
-  }
-  float y = contentTop + 40;
-  int index = 0;
-  for (Instructor inst : instructoresDisponibles) {
-    if (index >= botonesInstructoresDisponibles.size()) {
-      botonesInstructoresDisponibles.add(new Boton(inicioX, y, 500, 42,
-        inst.nombre + " | " + inst.cedula + " | Sesiones: " +
-        inst.sesionesRealizadas + "/" + ArchivoInstructores.MAX_SESIONES_MES,
-        color(41, 128, 185), color(52, 152, 219)));
-    } else {
-      Boton b = botonesInstructoresDisponibles.get(index);
-      b.x = inicioX;
-      b.y = y;
-      b.label = inst.nombre + " | " + inst.cedula + " | Sesiones: " +
-                   inst.sesionesRealizadas + "/" + ArchivoInstructores.MAX_SESIONES_MES;
-      b.dibujar();
+    dibujarAvisoPeligro(x, ty, min(w, 560),
+      "No hay instructores disponibles",
+      "Ningún instructor de esta especialidad tiene cupo en el mes.");
+    botonesInstructoresDisponibles.clear();
+  } else {
+    // Se asegura que exista un botón por instructor ANTES de dibujar,
+    // para que todos se rendericen ya en el primer cuadro.
+    while (botonesInstructoresDisponibles.size() < instructoresDisponibles.size()) {
+      botonesInstructoresDisponibles.add(new Boton(-3000, -3000, 1, 1, "", C_AZUL, C_AZUL));
     }
-    y += 50;
-    index++;
+    while (botonesInstructoresDisponibles.size() > instructoresDisponibles.size()) {
+      botonesInstructoresDisponibles.remove(botonesInstructoresDisponibles.size() - 1);
+    }
+
+    float anchoFila = min(w, 720);
+    float altoFila = 62;
+    float limite = panelY + panelH - margenV - 56;
+    int visibles = 0;
+
+    for (int i = 0; i < instructoresDisponibles.size(); i++) {
+      if (ty + altoFila > limite) break;
+      visibles = i + 1;
+      Instructor inst = instructoresDisponibles.get(i);
+      Boton b = botonesInstructoresDisponibles.get(i);
+      b.colocar(x, ty, anchoFila, altoFila);
+      b.actualizarEstado();
+
+      boolean sobre = b.animHover > 0.02f;
+      noStroke();
+      if (sobre) sombraSuave(x, ty, anchoFila, altoFila, 10, b.animHover * 34);
+      fill(lerpColor(color(255), color(248, 251, 255), b.animHover));
+      stroke(lerpColor(C_BORDE, C_AZUL, b.animHover));
+      strokeWeight(1 + b.animHover * 0.6f);
+      rect(x, ty, anchoFila, altoFila, 10);
+      noStroke();
+
+      fill(C_VERDE_BG);
+      ellipse(x + 34, ty + altoFila / 2, 36, 36);
+      dibujarIcono("personas", x + 34, ty + altoFila / 2, 9, C_VERDE);
+
+      fill(C_TXT);
+      textAlign(LEFT, BOTTOM);
+      tipoSansBold(14);
+      text(recortarTexto(inst.nombre, anchoFila * 0.4f), x + 62, ty + altoFila / 2 + 1);
+      fill(C_TXT_SUAVE);
+      textAlign(LEFT, TOP);
+      tipoSans(12);
+      text("Cédula " + inst.cedula, x + 62, ty + altoFila / 2 + 4);
+
+      float barX = x + anchoFila - 210;
+      fill(C_TXT_SUAVE);
+      textAlign(LEFT, BOTTOM);
+      tipoSans(11.5f);
+      text("Sesiones: " + inst.sesionesRealizadas + " / " + ArchivoInstructores.MAX_SESIONES_MES,
+           barX, ty + altoFila / 2);
+      dibujarBarraProgreso(barX, ty + altoFila / 2 + 6, 120, 6,
+                           inst.sesionesRealizadas, ArchivoInstructores.MAX_SESIONES_MES);
+
+      float fx = x + anchoFila - 34;
+      fill(lerpColor(C_AZUL_BG, C_AZUL, b.animHover));
+      ellipse(fx, ty + altoFila / 2, 32, 32);
+      dibujarIcono("flecha-der", fx + b.animHover * 2, ty + altoFila / 2, 8,
+                   lerpColor(C_AZUL, color(255), b.animHover));
+
+      ty += altoFila + 10;
+    }
+
+    // Las filas que no caben no deben quedar clicables.
+    for (int i = visibles; i < botonesInstructoresDisponibles.size(); i++) {
+      aparcar(botonesInstructoresDisponibles.get(i));
+    }
+    if (visibles < instructoresDisponibles.size()) {
+      fill(C_TXT_TENUE);
+      textAlign(LEFT, TOP);
+      tipoSans(11.5f);
+      text("Mostrando " + visibles + " de " + instructoresDisponibles.size() +
+           " instructores disponibles (amplía la ventana para ver más).", x, ty);
+    }
   }
-  while (botonesInstructoresDisponibles.size() > index) {
-    botonesInstructoresDisponibles.remove(botonesInstructoresDisponibles.size() - 1);
-  }
+
+  botonVolverSesiones.colocar(panelX + panelW - margenH - 132, panelY + panelH - margenV - 42, 132, 42);
   botonVolverSesiones.dibujar();
-  dibujarPieSesiones();
+  dibujarPie();
 }
 
 void dibujarFormularioConsultarSesion() {
-  float contentTop = dibujarEncabezadoSesionesSub("Consultar Sesión");
-  float inicioX = sidebarAncho + width * 0.022f;
-  campoCodigoSesion.x = inicioX; campoCodigoSesion.y = contentTop;
+  float y = dibujarPantallaSub("Módulo de Sesiones", "Consultar Sesión");
+  float x = panelX + margenH;
+  float colW = min((panelW - margenH * 2) * 0.46f, 400);
+
+  campoCodigoSesion.colocar(x, y + 24, colW - 148);
   campoCodigoSesion.dibujar();
-  botonBuscar.x = inicioX + 360; botonBuscar.y = contentTop - 2;
-  botonBuscar.w = 120; botonBuscar.h = 40;
+  botonBuscar.label = "Buscar";
+  botonBuscar.colocar(x + colW - 138, y + 24, 138, 44);
   botonBuscar.dibujar();
-  botonVolverSesiones.dibujar();
+
   if (sesionEncontrada != null) {
-    fill(20);
-    textAlign(LEFT, TOP);
-    textSize(16);
-    float y = contentTop + 70;
-    text("Código: " + sesionEncontrada.codigoUnico, inicioX, y);
-    text("Aprendiz: " + sesionEncontrada.nombreAprendiz, inicioX, y + 35);
-    text("Cédula: " + sesionEncontrada.cedulaAprendiz, inicioX, y + 70);
-    text("Especialidad: " + sesionEncontrada.especialidad, inicioX, y + 105);
-    text("Instructor: " + sesionEncontrada.cedulaInstructor, inicioX, y + 140);
-    text("Fecha: " + sesionEncontrada.fechaSesion, inicioX, y + 175);
+    dibujarFichaDatos(x, y + 104, min(panelW - margenH * 2, 560),
+      "Sesión " + sesionEncontrada.codigoUnico,
+      new String[] {"Aprendiz", "Cédula del aprendiz", "Especialidad", "Cédula del instructor", "Fecha"},
+      new String[] {
+        sesionEncontrada.nombreAprendiz,
+        sesionEncontrada.cedulaAprendiz,
+        sesionEncontrada.especialidad,
+        sesionEncontrada.cedulaInstructor,
+        sesionEncontrada.fechaSesion },
+      C_VERDE);
+  } else {
+    dibujarTarjetaAyuda(x, y + 104, min(panelW - margenH * 2, 560),
+      "Cómo consultar", new String[] {
+        "El código único se genera al asignar la sesión.",
+        "Tiene el formato SES seguido de varios dígitos." });
   }
-  dibujarPieSesiones();
+
+  botonVolverSesiones.colocar(panelX + margenH, panelY + panelH - margenV - 42, 132, 42);
+  botonVolverSesiones.dibujar();
+  dibujarPie();
 }
 
 void dibujarFormularioCancelarSesion() {
-  float contentTop = dibujarEncabezadoSesionesSub("Cancelar Sesión");
-  float inicioX = sidebarAncho + width * 0.022f;
-  fill(COLOR_GRIS_DESC);
-  textAlign(LEFT, TOP);
-  textSize(14);
-  text("Ingresa el código de la sesión a cancelar (solo fechas futuras)", inicioX, contentTop);
-  campoCodigoSesion.x = inicioX;
-  campoCodigoSesion.y = contentTop + 30;
+  float y = dibujarPantallaSub("Módulo de Sesiones", "Cancelar Sesión");
+  float x = panelX + margenH;
+  float colW = min((panelW - margenH * 2) * 0.44f, 360);
+
+  campoCodigoSesion.colocar(x, y + 24, colW);
   campoCodigoSesion.dibujar();
-  botonEliminar.x = inicioX;
-  botonEliminar.y = contentTop + 90;
-  botonEliminar.label = "Cancelar Sesión";
+
+  dibujarAvisoPeligro(x, y + 104, min(panelW - margenH * 2, 560),
+    "Sólo se cancelan sesiones futuras",
+    "Al cancelar se libera el cupo del instructor y del aprendiz.");
+
+  botonEliminar.label = "Cancelar sesión";
+  botonEliminar.colocar(x, y + 200, 200, 46);
   botonEliminar.dibujar();
+
+  botonVolverSesiones.colocar(panelX + margenH, panelY + panelH - margenV - 42, 132, 42);
   botonVolverSesiones.dibujar();
-  dibujarPieSesiones();
+  dibujarPie();
 }
 
 void dibujarListadoSesiones() {
-  float contentTop = dibujarEncabezadoSesionesSub("Sesiones Registradas");
-  botonVolverSesiones.dibujar();
+  float y = dibujarPantallaSub("Módulo de Sesiones", "Sesiones Registradas");
+  float x = panelX + margenH;
+  float w = panelW - margenH * 2;
+
   if (listaSesiones == null) listaSesiones = archivoSesiones.listarTodas();
-  float inicioX = sidebarAncho + width * 0.022f;
-  float y = contentTop;
-  fill(20);
-  textAlign(LEFT, TOP);
-  textSize(15);
+
   if (listaSesiones.isEmpty()) {
-    text("No hay sesiones registradas.", inicioX, y);
+    dibujarTablaVacia(x, y + 12, w, "No hay sesiones registradas.");
   } else {
-    fill(100);
-    text("Código", inicioX, y);
-    text("Aprendiz", inicioX + 150, y);
-    text("Especialidad", inicioX + 330, y);
-    text("Fecha", inicioX + 480, y);
-    y += 28;
-    fill(20);
+    String[] cols = {"Código", "Aprendiz", "Especialidad", "Instructor", "Fecha"};
+    float[] pesos = {0.22f, 0.24f, 0.20f, 0.16f, 0.18f};
+    float ty = dibujarEncabezadoTabla(x, y + 12, w, cols, pesos);
+
+    float altoFila = 40;
+    float limite = panelY + panelH - margenV - 56;
+    String hoy = obtenerFechaActual();
+    int i = 0;
+
     for (Sesion ses : listaSesiones) {
-      text(ses.codigoUnico, inicioX, y);
-      text(ses.nombreAprendiz, inicioX + 150, y);
-      text(ses.especialidad, inicioX + 330, y);
-      text(ses.fechaSesion, inicioX + 480, y);
-      y += 28;
-      if (y > height - 90) break;
+      if (ty + altoFila > limite) break;
+      dibujarFilaTabla(x, ty, w, altoFila, i);
+
+      float cx = x + 14;
+      textAlign(LEFT, CENTER);
+      tipoSans(12.5f);
+      fill(C_TXT_SUAVE);
+      text(recortarTexto(ses.codigoUnico, w * pesos[0] - 18), cx, ty + altoFila / 2);
+      cx += w * pesos[0];
+      fill(C_TXT);
+      tipoSansBold(12.5f);
+      text(recortarTexto(ses.nombreAprendiz, w * pesos[1] - 18), cx, ty + altoFila / 2);
+      cx += w * pesos[1];
+      tipoSans(12.5f);
+      text(recortarTexto(ses.especialidad, w * pesos[2] - 18), cx, ty + altoFila / 2);
+      cx += w * pesos[2];
+      fill(C_TXT_SUAVE);
+      text(recortarTexto(ses.cedulaInstructor, w * pesos[3] - 18), cx, ty + altoFila / 2);
+      cx += w * pesos[3];
+
+      // La fecha se colorea según sea pasada o futura
+      boolean futura = compararFechas(ses.fechaSesion, hoy) >= 0;
+      fill(futura ? C_VERDE : C_TXT_TENUE);
+      tipoSansBold(12.5f);
+      text(ses.fechaSesion, cx, ty + altoFila / 2);
+
+      ty += altoFila;
+      i++;
     }
+    dibujarPieDeTabla(x, ty, w, i, listaSesiones.size(), "sesiones");
   }
-  dibujarPieSesiones();
+
+  botonVolverSesiones.colocar(panelX + margenH, panelY + panelH - margenV - 42, 132, 42);
+  botonVolverSesiones.dibujar();
+  dibujarPie();
 }
 
+
 // ================================================================
-// FUNCIONES DE ACCIÓN PARA INSTRUCTORES
+// FUNCIONES DE ACCIÓN PARA INSTRUCTORES  (lógica sin cambios)
 // ================================================================
 
 void accionGuardarInstructor() {
@@ -979,8 +1546,9 @@ void accionEliminarInstructor() {
   }
 }
 
+
 // ================================================================
-// FUNCIONES DE ACCIÓN PARA APRENDICES
+// FUNCIONES DE ACCIÓN PARA APRENDICES  (lógica sin cambios)
 // ================================================================
 
 void accionGuardarAprendiz() {
@@ -1099,8 +1667,9 @@ void accionEliminarAprendiz() {
   }
 }
 
+
 // ================================================================
-// FUNCIONES DE ACCIÓN PARA SESIONES
+// FUNCIONES DE ACCIÓN PARA SESIONES  (lógica sin cambios)
 // ================================================================
 
 void accionVerificarAprendiz() {
@@ -1111,15 +1680,16 @@ void accionVerificarAprendiz() {
   }
   aprendizEncontrado = archivoAprendices.leer(cedula);
   if (aprendizEncontrado == null) {
-    mostrarMensaje("No existe un aprendiz con esa cédula. Regístrelo primero.", true);
+    mostrarMensaje("No existe un aprendiz con esa cédula. Regístralo primero.", true);
     return;
   }
   if (!aprendizEncontrado.tieneAlgunCupoDisponible()) {
-    mostrarMensaje("El aprendiz ya completó sus " + Aprendiz.MAX_SESIONES_MES + " sesiones del mes en todas sus especialidades.", true);
+    mostrarMensaje("El aprendiz ya completó sus " + Aprendiz.MAX_SESIONES_MES +
+                   " sesiones del mes en todas sus especialidades.", true);
     aprendizEncontrado = null;
     return;
   }
-  mostrarMensaje("✓ Aprendiz verificado: " + aprendizEncontrado.nombre, false);
+  mostrarMensaje("Aprendiz verificado: " + aprendizEncontrado.nombre, false);
 }
 
 void accionBuscarInstructoresDisponibles() {
@@ -1137,7 +1707,8 @@ void accionBuscarInstructoresDisponibles() {
     return;
   }
   if (!aprendizEncontrado.estaDisponibleEn(especialidadSeleccionada)) {
-    mostrarMensaje("El aprendiz ya completó sus " + Aprendiz.MAX_SESIONES_MES + " sesiones de " + especialidadSeleccionada + " este mes.", true);
+    mostrarMensaje("El aprendiz ya completó sus " + Aprendiz.MAX_SESIONES_MES +
+                   " sesiones de " + especialidadSeleccionada + " este mes.", true);
     return;
   }
   String fechaTexto = campoFechaSesion.contenido.trim();
@@ -1161,6 +1732,7 @@ void accionBuscarInstructoresDisponibles() {
     return;
   }
   cedulaAprendizSeleccionado = aprendizEncontrado.cedula;
+  botonesInstructoresDisponibles.clear();
   estado = SELECCIONAR_INSTRUCTOR_SESION;
   mensaje = "";
 }
@@ -1201,9 +1773,10 @@ void accionAsignarSesionCompleta() {
     mostrarMensaje("Error al actualizar aprendiz.", true);
     return;
   }
-  mostrarMensaje("✓ Sesión asignada exitosamente. Código: " + codigoSesion, false);
+  mostrarMensaje("Sesión asignada exitosamente. Código: " + codigoSesion, false);
   limpiarDatosTemporales();
   limpiarCamposFormulario();
+  botonesInstructoresDisponibles.clear();
   estado = MENU_SESIONES;
 }
 
@@ -1247,48 +1820,50 @@ void accionCancelarSesion() {
     archivoInstructores.actualizar(instructor);
   }
   archivoAprendices.decrementarSesion(sesion.cedulaAprendiz, sesion.especialidad);
-  mostrarMensaje("✓ Sesión cancelada correctamente.", false);
+  mostrarMensaje("Sesión cancelada correctamente.", false);
   campoCodigoSesion.limpiar();
   sesionEncontrada = null;
 }
 
 void mostrarOpcionesReinicio() {
-  mostrarMensaje("Reiniciando sesiones de instructores y aprendices...", false);
   boolean exito = true;
   if (archivoInstructores != null) {
     if (archivoInstructores.reiniciarSesiones()) {
-      println("✓ Sesiones de instructores reiniciadas.");
+      println("Sesiones de instructores reiniciadas.");
     } else {
       exito = false;
-      println("✗ Error al reiniciar sesiones de instructores.");
+      println("Error al reiniciar sesiones de instructores.");
     }
   }
   if (archivoAprendices != null) {
     if (archivoAprendices.reiniciarSesiones()) {
-      println("✓ Sesiones de aprendices reiniciadas.");
+      println("Sesiones de aprendices reiniciadas.");
     } else {
       exito = false;
-      println("✗ Error al reiniciar sesiones de aprendices.");
+      println("Error al reiniciar sesiones de aprendices.");
     }
   }
+  ultimoRefrescoStats = -99999;   // fuerza recalcular los indicadores
   if (exito) {
-    mostrarMensaje("✓ Todas las sesiones reiniciadas correctamente.", false);
+    mostrarMensaje("Todas las sesiones fueron reiniciadas correctamente.", false);
   } else {
     mostrarMensaje("Error al reiniciar algunas sesiones.", true);
   }
 }
 
+
 // ================================================================
 // MANEJO DE EVENTOS DEL MOUSE
+// (mismo flujo y mismos índices de botones que la versión anterior)
 // ================================================================
 
 void mousePressed() {
-  // La barra lateral tiene prioridad: si el clic cae ahí, se procesa
-  // la navegación y no se evalúa el contenido de la pantalla actual.
+  // La barra lateral y la hamburguesa tienen prioridad.
   if (manejarClicSidebar()) return;
 
   switch (estado) {
     case MENU_PRINCIPAL:
+      if (botonesMenuPrincipal.size() < 5) break;
       if (botonesMenuPrincipal.get(0).contieneClic(mouseX, mouseY)) {
         estado = MENU_SESIONES;
         limpiarDatosTemporales();
@@ -1306,6 +1881,7 @@ void mousePressed() {
       break;
 
     case MENU_REPORTES:
+      if (botonesMenuReportes.size() < 3) break;
       if (botonesMenuReportes.get(0).contieneClic(mouseX, mouseY)) {
         estado = VER_REPORTE; mensaje = "";
       } else if (botonesMenuReportes.get(1).contieneClic(mouseX, mouseY)) {
@@ -1322,6 +1898,7 @@ void mousePressed() {
       break;
 
     case MENU_INSTRUCTORES:
+      if (botonesMenuInstructores.size() < 7) break;
       if (botonesMenuInstructores.get(0).contieneClic(mouseX, mouseY)) {
         estado = CREAR_INSTRUCTOR; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
       } else if (botonesMenuInstructores.get(1).contieneClic(mouseX, mouseY)) {
@@ -1338,12 +1915,14 @@ void mousePressed() {
         } else {
           mostrarMensaje("No se pudieron reiniciar las sesiones.", true);
         }
+        ultimoRefrescoStats = -99999;
       } else if (botonesMenuInstructores.get(6).contieneClic(mouseX, mouseY)) {
         estado = MENU_PRINCIPAL; limpiarDatosTemporales(); mensaje = "";
       }
       break;
 
     case MENU_APRENDICES:
+      if (botonesMenuAprendices.size() < 7) break;
       if (botonesMenuAprendices.get(0).contieneClic(mouseX, mouseY)) {
         estado = CREAR_APRENDIZ; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
       } else if (botonesMenuAprendices.get(1).contieneClic(mouseX, mouseY)) {
@@ -1360,13 +1939,14 @@ void mousePressed() {
         } else {
           mostrarMensaje("No se pudieron reiniciar las sesiones.", true);
         }
+        ultimoRefrescoStats = -99999;
       } else if (botonesMenuAprendices.get(6).contieneClic(mouseX, mouseY)) {
         estado = MENU_PRINCIPAL; limpiarDatosTemporales(); mensaje = "";
       }
       break;
 
     case MENU_SESIONES:
-      if (manejarClicSidebar()) break;
+      if (botonesMenuSesiones.size() < 5) break;
       if (botonesMenuSesiones.get(0).contieneClic(mouseX, mouseY)) {
         estado = ASIGNAR_SESION; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
         botonBuscar.label = "Verificar";
@@ -1374,7 +1954,6 @@ void mousePressed() {
         estado = CONSULTAR_SESION; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
       } else if (botonesMenuSesiones.get(2).contieneClic(mouseX, mouseY)) {
         estado = CANCELAR_SESION; limpiarDatosTemporales(); limpiarCamposFormulario(); mensaje = "";
-        botonEliminar.label = "Cancelar Sesión";
       } else if (botonesMenuSesiones.get(3).contieneClic(mouseX, mouseY)) {
         listaSesiones = archivoSesiones.listarTodas(); estado = LISTAR_SESIONES; mensaje = "";
       } else if (botonesMenuSesiones.get(4).contieneClic(mouseX, mouseY)) {
@@ -1481,9 +2060,9 @@ void mousePressed() {
       break;
 
     case ASIGNAR_SESION:
-      if (manejarClicSidebar()) break;
       activarCampoSiClic(campoCedulaAprendiz);
       activarCampoSiClic(campoEspecialidadSesion);
+      activarCampoSiClic(campoFechaSesion);
       if (botonBuscar.contieneClic(mouseX, mouseY)) {
         accionVerificarAprendiz();
       } else if (botonAsignar.contieneClic(mouseX, mouseY) && aprendizEncontrado != null) {
@@ -1494,7 +2073,6 @@ void mousePressed() {
       break;
 
     case SELECCIONAR_INSTRUCTOR_SESION:
-      if (manejarClicSidebar()) break;
       for (int i = 0; i < botonesInstructoresDisponibles.size(); i++) {
         if (botonesInstructoresDisponibles.get(i).contieneClic(mouseX, mouseY)) {
           instructorSeleccionadoIndex = i;
@@ -1508,7 +2086,6 @@ void mousePressed() {
       break;
 
     case CONSULTAR_SESION:
-      if (manejarClicSidebar()) break;
       activarCampoSiClic(campoCodigoSesion);
       if (botonBuscar.contieneClic(mouseX, mouseY)) {
         accionBuscarSesion();
@@ -1518,7 +2095,6 @@ void mousePressed() {
       break;
 
     case CANCELAR_SESION:
-      if (manejarClicSidebar()) break;
       activarCampoSiClic(campoCodigoSesion);
       if (botonEliminar.contieneClic(mouseX, mouseY)) {
         accionCancelarSesion();
@@ -1528,7 +2104,6 @@ void mousePressed() {
       break;
 
     case LISTAR_SESIONES:
-      if (manejarClicSidebar()) break;
       if (botonVolverSesiones.contieneClic(mouseX, mouseY)) {
         estado = MENU_SESIONES; listaSesiones = null; mensaje = "";
       }
@@ -1536,8 +2111,9 @@ void mousePressed() {
   }
 }
 
+
 // ================================================================
-// MANEJO DE TECLADO
+// MANEJO DE TECLADO  (sin cambios)
 // ================================================================
 
 void keyPressed() {
@@ -1582,6 +2158,7 @@ void keyPressed() {
       break;
   }
 }
+
 
 // ================================================================
 // CIERRE DE LA APLICACIÓN
